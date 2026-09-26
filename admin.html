@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-28"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-29"></head><body>
 <div id="loginView" class="login-wrap"><div class="login-box"><div class="pill">管理员入口</div><h1 style="margin-top:12px">登录管理后台</h1><div class="muted">请输入管理员密码。</div><div class="field" style="margin-top:20px"><label>管理员密码</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button id="adminLogin" class="btn primary" style="width:100%;margin-top:18px">登录</button><div id="loginNote" class="notice" hidden></div></div></div>
 
 <div id="appView" hidden>
@@ -194,6 +194,8 @@ import { base44, esc, showMessage, buildFieldControl, buildGroupedFieldControls,
 const ADMIN_HASH='78fd5f1e5a3f6eef05ab8d692942fd0ff4a8f4cc0e6087026626006a7fae452d';
 let reps=[],fields=[],customers=[],progressStages=[],editingCustomerId=null,draggedFieldId=null,dragSaving=false,draggedProgressId=null,progressDragSaving=false,editingFieldTypeId=null;
 let currentView='all',currentRepFilter='';
+const CUSTOMER_PAGE_SIZE=50;
+let customerPage=1,customerHasNext=false,totalCustomerCount=0,customerCountByRep={},customerCountTimer=null;
 
 const loginView=document.getElementById('loginView'),appView=document.getElementById('appView'),loginNote=document.getElementById('loginNote');
 const customerModal=document.getElementById('customerModal'),customerEditForm=document.getElementById('customerEditForm'),customerEditNote=document.getElementById('customerEditNote');
@@ -220,7 +222,7 @@ function showAdminView(view,repUsername=''){
       document.getElementById('customerViewTitle').textContent=name+' 的客户';
       document.getElementById('customerViewDesc').textContent='只显示业务员 '+repUsername+' 登记的客户。';
     }
-    renderCustomers();return;
+    customerPage=1;loadCustomers({resetPage:true});return;
   }
   if(view==='reps'){document.getElementById('view-reps').hidden=false;document.querySelector('.sidebar-item[data-view="reps"]').classList.add('active')}
   if(view==='fields'){document.getElementById('view-fields').hidden=false;document.querySelector('.sidebar-item[data-view="fields"]').classList.add('active')}
@@ -238,13 +240,13 @@ document.querySelector('.sidebar-item[data-view="backup"]').onclick=()=>showAdmi
 async function enter(){
   loginView.hidden=true;appView.hidden=false;
   document.getElementById('logDate').value=new Date().toISOString().slice(0,10);
-  await Promise.all([loadReps(),loadFields(),loadProgress(),loadCustomers(),loadLogs()]);
+  await Promise.all([loadReps(),loadFields(),loadProgress(),loadLogs(),refreshCustomerCounts()]);
   showAdminView('all');
   try{
     base44.entities.SalesRep.subscribe(()=>loadReps());
     base44.entities.FormField.subscribe(()=>{if(!dragSaving){loadFields();loadCustomers()}});
     base44.entities.ProgressStage.subscribe(()=>{if(!progressDragSaving){loadProgress();loadCustomers()}});
-    base44.entities.Customer.subscribe(()=>loadCustomers());
+    base44.entities.Customer.subscribe(()=>{loadCustomers();scheduleCustomerCountRefresh()});
     base44.entities.ActivityLog.subscribe(()=>loadLogs());
   }catch(_){}
 }
@@ -265,7 +267,7 @@ async function loadReps(){
 function renderSidebar(){
   const nav=document.getElementById('repCustomerNav');
   nav.innerHTML=reps.map(r=>{
-    const count=customers.filter(c=>String(c.rep_username||'')===String(r.username||'')).length;
+    const count=customerCountByRep[String(r.username||'')]||0;
     const label=r.display_name||r.username||'未命名';
     return '<button class="sidebar-item" data-view="rep" data-rep="'+esc(r.username||'')+'"><span class="sidebar-avatar">'+esc(String(label).slice(0,1).toUpperCase())+'</span><span class="sidebar-text"><b>'+esc(label)+'</b><small>'+esc(r.username||'')+'</small></span><span class="sidebar-count">'+count+'</span></button>';
   }).join('');
@@ -275,7 +277,7 @@ function renderReps(){
   const box=document.getElementById('repList');
   if(!reps.length){box.innerHTML='<div class="empty">还没有业务员用户名</div>';return}
   box.innerHTML='<div class="table-wrap"><table><thead><tr><th>用户名</th><th>显示名称</th><th>客户数</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+reps.map(r=>{
-    const count=customers.filter(c=>String(c.rep_username||'')===String(r.username||'')).length;
+    const count=customerCountByRep[String(r.username||'')]||0;
     return '<tr><td><b>'+esc(r.username||'')+'</b></td><td>'+esc(r.display_name||'')+'</td><td>'+count+'</td><td>'+esc(formatDate(r.created_date))+'</td><td><button class="btn danger delrep" data-id="'+r.id+'">删除</button></td></tr>';
   }).join('')+'</tbody></table></div>';
   box.querySelectorAll('.delrep').forEach(b=>b.onclick=async()=>{if(!confirm('删除这个业务员用户名？'))return;await base44.entities.SalesRep.delete(b.dataset.id);await loadReps()})
@@ -773,16 +775,58 @@ async function importFullBackup(file){
   }
 }
 
-async function loadCustomers(){
+async function fetchCustomerPage(){
+  const skip=(customerPage-1)*CUSTOMER_PAGE_SIZE;
+  let rows;
+  if(currentView==='rep'&&currentRepFilter){
+    rows=unwrap(await base44.entities.Customer.filter({rep_username:currentRepFilter},'-created_date',CUSTOMER_PAGE_SIZE+1,skip));
+  }else{
+    rows=unwrap(await base44.entities.Customer.list('-created_date',CUSTOMER_PAGE_SIZE+1,skip));
+  }
+  customerHasNext=rows.length>CUSTOMER_PAGE_SIZE;
+  customers=rows.slice(0,CUSTOMER_PAGE_SIZE);
+  if(!customers.length&&customerPage>1){customerPage--;return fetchCustomerPage()}
+}
+async function refreshCustomerCounts(){
+  let skip=0,total=0,counts={};
+  while(true){
+    const batch=unwrap(await base44.entities.Customer.list('-created_date',500,skip));
+    for(const row of batch){
+      total++;
+      const key=String(row.rep_username||'');
+      counts[key]=(counts[key]||0)+1;
+    }
+    if(batch.length<500)break;
+    skip+=500;
+  }
+  totalCustomerCount=total;customerCountByRep=counts;
+  document.getElementById('totalCustomers').textContent=total;
+  document.getElementById('allCustomerCount').textContent=total;
+  renderSidebar();renderReps();
+}
+function scheduleCustomerCountRefresh(){
+  clearTimeout(customerCountTimer);
+  customerCountTimer=setTimeout(()=>refreshCustomerCounts().catch(()=>{}),1200);
+}
+async function loadCustomers({resetPage=false,refreshCounts=false}={}){
+  if(resetPage)customerPage=1;
   try{
-    customers=unwrap(await base44.entities.Customer.list({sort:'-created_date',limit:1000}));
-    document.getElementById('totalCustomers').textContent=customers.length;document.getElementById('allCustomerCount').textContent=customers.length;
-    renderCustomers();renderSidebar();renderReps();
+    await fetchCustomerPage();
+    renderCustomers();
+    if(refreshCounts)await refreshCustomerCounts();
   }catch(err){document.getElementById('customerList').innerHTML='<div class="notice err">读取客户失败：'+esc(err?.message||String(err))+'</div>'}
 }
 function getVisibleCustomers(){
   const q=document.getElementById('customerSearch').value.trim().toLowerCase();
-  return customers.filter(r=>{if(currentView==='rep'&&String(r.rep_username||'')!==String(currentRepFilter||''))return false;return (String(r.rep_username||'')+' '+JSON.stringify(r.data||{})).toLowerCase().includes(q)})
+  return customers.filter(r=>(String(r.rep_username||'')+' '+JSON.stringify(r.data||{})).toLowerCase().includes(q))
+}
+function adminPagerHtml(){
+  return '<div class="customer-pager"><div class="customer-pager-info">第 <b>'+customerPage+'</b> 页 · 每页 '+CUSTOMER_PAGE_SIZE+' 条'+(totalCustomerCount?' · 全部 '+totalCustomerCount+' 条':'')+'</div><div class="customer-pager-actions"><button id="adminPrevPage" class="btn soft" '+(customerPage<=1?'disabled':'')+'>上一页</button><button id="adminNextPage" class="btn soft" '+(!customerHasNext?'disabled':'')+'>下一页</button></div></div>';
+}
+function bindAdminPager(){
+  const prev=document.getElementById('adminPrevPage'),next=document.getElementById('adminNextPage');
+  if(prev)prev.onclick=async()=>{if(customerPage<=1)return;customerPage--;await loadCustomers();document.getElementById('view-customers').scrollIntoView({behavior:'smooth',block:'start'})};
+  if(next)next.onclick=async()=>{if(!customerHasNext)return;customerPage++;await loadCustomers();document.getElementById('view-customers').scrollIntoView({behavior:'smooth',block:'start'})};
 }
 function fixedCustomerValue(row,key){return row.data?.[key]??''}
 function progressLabels(row){
@@ -799,12 +843,12 @@ function repDisplayName(username){
 }
 function renderCustomers(){
   const rows=getVisibleCustomers(),box=document.getElementById('customerList');
-  if(!rows.length){box.innerHTML='<div class="empty">暂无匹配客户</div>';return}
+  if(!rows.length){box.innerHTML='<div class="empty">当前页暂无匹配客户</div>'+adminPagerHtml();bindAdminPager();return}
   const eye='<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
-  box.innerHTML='<div class="table-wrap customer-table fixed-customer-table"><table><thead><tr><th>转主号时间</th><th>客户姓名</th><th>手机号</th><th>邮箱</th><th>损失金额</th><th>目前进度</th><th>下一步</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r),pl=progressLabels(r);return '<tr class="customer-progress-row" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td data-label="转主号时间">'+esc(formatDate(fixedCustomerValue(r,'f_transfer_main_time'))||'—')+'</td><td data-label="客户姓名"><div class="customer-name-stack"><div class="customer-name-line"><b>'+esc(fixedCustomerValue(r,'f_customer_name')||'—')+'</b><span class="row-progress-badge">'+s.percent+'%</span></div><div class="customer-owner-line">业务员：'+esc(repDisplayName(r.rep_username))+'</div></div></td><td data-label="手机号">'+esc(fixedCustomerValue(r,'f_phone')||'—')+'</td><td data-label="邮箱">'+esc(fixedCustomerValue(r,'f_email')||'—')+'</td><td data-label="损失金额">'+esc(fixedCustomerValue(r,'f_loss_amount')||'—')+'</td><td data-label="目前进度"><span class="current-progress-text" style="color:'+s.solid+'">'+esc(pl.current)+'</span></td><td data-label="下一步">'+esc(pl.next)+'</td><td data-label="操作"><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button" aria-label="预览完整客户信息">'+eye+'</button></span><button class="btn soft editcustomer" data-id="'+r.id+'">编辑</button><button class="btn danger delcustomer" data-id="'+r.id+'">删除</button></div></td></tr>'}).join('')+'</tbody></table></div>';
-  bindPreviewHover(box);
+  box.innerHTML='<div class="table-wrap customer-table fixed-customer-table"><table><thead><tr><th>转主号时间</th><th>客户姓名</th><th>手机号</th><th>邮箱</th><th>损失金额</th><th>目前进度</th><th>下一步</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r),pl=progressLabels(r);return '<tr class="customer-progress-row" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td data-label="转主号时间">'+esc(formatDate(fixedCustomerValue(r,'f_transfer_main_time'))||'—')+'</td><td data-label="客户姓名"><div class="customer-name-stack"><div class="customer-name-line"><b>'+esc(fixedCustomerValue(r,'f_customer_name')||'—')+'</b><span class="row-progress-badge">'+s.percent+'%</span></div><div class="customer-owner-line">业务员：'+esc(repDisplayName(r.rep_username))+'</div></div></td><td data-label="手机号">'+esc(fixedCustomerValue(r,'f_phone')||'—')+'</td><td data-label="邮箱">'+esc(fixedCustomerValue(r,'f_email')||'—')+'</td><td data-label="损失金额">'+esc(fixedCustomerValue(r,'f_loss_amount')||'—')+'</td><td data-label="目前进度"><span class="current-progress-text" style="color:'+s.solid+'">'+esc(pl.current)+'</span></td><td data-label="下一步">'+esc(pl.next)+'</td><td data-label="操作"><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button" aria-label="预览完整客户信息">'+eye+'</button></span><button class="btn soft editcustomer" data-id="'+r.id+'">编辑</button><button class="btn danger delcustomer" data-id="'+r.id+'">删除</button></div></td></tr>'}).join('')+'</tbody></table></div>'+adminPagerHtml();
+  bindPreviewHover(box);bindAdminPager();
   box.querySelectorAll('.editcustomer').forEach(b=>b.onclick=()=>openCustomerEditor(customers.find(x=>x.id===b.dataset.id)));
-  box.querySelectorAll('.delcustomer').forEach(b=>b.onclick=async()=>{const row=customers.find(x=>x.id===b.dataset.id);if(!row||!confirm('确定删除这条客户记录吗？'))return;await base44.entities.Customer.delete(row.id);await loadCustomers()})
+  box.querySelectorAll('.delcustomer').forEach(b=>b.onclick=async()=>{const row=customers.find(x=>x.id===b.dataset.id);if(!row||!confirm('确定删除这条客户记录吗？'))return;await base44.entities.Customer.delete(row.id);await loadCustomers({refreshCounts:true})})
 }
 function openCustomerEditor(row){
   if(!row)return;editingCustomerId=row.id;
@@ -823,14 +867,26 @@ customerEditForm.onsubmit=async e=>{
   catch(err){showMessage(customerEditNote,'保存失败：'+(err?.message||String(err)),'err')}
 };
 
-document.getElementById('exportBtn').onclick=()=>{
-  const rows=getVisibleCustomers();
-  downloadCsv(currentView==='rep'?(currentRepFilter+'_客户数据.csv'):'客户登记数据.csv',[
-    ['转主号时间','客户姓名','手机号','邮箱','损失金额','目前进度','下一步'],
-    ...rows.map(r=>{const p=progressLabels(r);return [fixedCustomerValue(r,'f_transfer_main_time'),fixedCustomerValue(r,'f_customer_name'),fixedCustomerValue(r,'f_phone'),fixedCustomerValue(r,'f_email'),fixedCustomerValue(r,'f_loss_amount'),p.current,p.next]})
-  ])
+document.getElementById('exportBtn').onclick=async()=>{
+  const btn=document.getElementById('exportBtn'),q=document.getElementById('customerSearch').value.trim().toLowerCase();btn.disabled=true;btn.textContent='正在导出…';
+  try{
+    const all=[];let skip=0;
+    while(true){
+      const batch=currentView==='rep'&&currentRepFilter
+        ?unwrap(await base44.entities.Customer.filter({rep_username:currentRepFilter},'-created_date',500,skip))
+        :unwrap(await base44.entities.Customer.list('-created_date',500,skip));
+      all.push(...batch);if(batch.length<500)break;skip+=500;
+    }
+    const rows=q?all.filter(r=>(String(r.rep_username||'')+' '+JSON.stringify(r.data||{})).toLowerCase().includes(q)):all;
+    downloadCsv(currentView==='rep'?(currentRepFilter+'_客户数据.csv'):'客户登记数据.csv',[
+      ['转主号时间','客户姓名','业务员','手机号','邮箱','损失金额','目前进度','下一步'],
+      ...rows.map(r=>{const p=progressLabels(r);return [fixedCustomerValue(r,'f_transfer_main_time'),fixedCustomerValue(r,'f_customer_name'),repDisplayName(r.rep_username),fixedCustomerValue(r,'f_phone'),fixedCustomerValue(r,'f_email'),fixedCustomerValue(r,'f_loss_amount'),p.current,p.next]})
+    ]);
+  }finally{btn.disabled=false;btn.textContent='导出 CSV'}
 };
-document.getElementById('customerSearch').oninput=renderCustomers;document.getElementById('refreshCustomers').onclick=loadCustomers;document.getElementById('refreshReps').onclick=loadReps;
+document.getElementById('customerSearch').oninput=renderCustomers;
+document.getElementById('refreshCustomers').onclick=async()=>{await loadCustomers();await refreshCustomerCounts()};
+document.getElementById('refreshReps').onclick=loadReps;
 document.getElementById('closeCustomerModal').onclick=()=>customerModal.hidden=true;document.getElementById('cancelCustomerEdit').onclick=()=>customerModal.hidden=true;customerModal.onclick=e=>{if(e.target===customerModal)customerModal.hidden=true};
 document.getElementById('logDate').onchange=loadLogs;
 document.getElementById('logSearch').oninput=loadLogs;
