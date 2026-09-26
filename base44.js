@@ -32,7 +32,7 @@ export function buildFieldControl(field, value = '') {
     const html = opts.map(o => `<option value="${esc(o)}" ${String(value) === o ? 'selected' : ''}>${esc(o)}</option>`).join('');
     return `<div class="field">${label}<select data-key="${key}" ${required}><option value="">请选择</option>${html}</select></div>`;
   }
-  const type = ({number:'number',date:'date',email:'email',tel:'tel'}[field.field_type] || 'text');
+  const type = ({number:'number',date:'date',datetime:'datetime-local',email:'email',tel:'tel'}[field.field_type] || 'text');
   return `<div class="field">${label}<input type="${type}" data-key="${key}" value="${esc(value)}" ${required}></div>`;
 }
 
