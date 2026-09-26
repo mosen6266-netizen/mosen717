@@ -33,3 +33,34 @@ a{color:inherit}.topbar{height:66px;background:rgba(255,255,255,.94);backdrop-fi
 .progress-editor{margin-top:18px;padding:16px;border:1px solid var(--line);border-radius:14px;background:#fafbfc}.progress-checklist{display:grid;gap:8px}.progress-check{display:grid;grid-template-columns:34px 1fr 28px;align-items:center;gap:10px;padding:10px 12px;background:#fff;border:1px solid var(--line);border-radius:11px;cursor:pointer;transition:.12s}.progress-check input{display:none}.progress-check:hover{border-color:#cfd4dc}.progress-check.checked{background:#ecfdf3;border-color:#abefc6}.progress-check-index{width:26px;height:26px;border-radius:8px;background:#f2f4f7;display:grid;place-items:center;font-size:11px;font-weight:800}.progress-check.checked .progress-check-index{background:#12b76a;color:#fff}.progress-check-label{font-size:12px;font-weight:750}.progress-check-mark{opacity:0;color:#067647;font-weight:900}.progress-check.checked .progress-check-mark{opacity:1}
 .progress-name-input{width:100%;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font:inherit;font-weight:750;color:var(--text);background:#fff}.progress-name-input:focus{outline:none;border-color:#98a2b3;box-shadow:0 0 0 3px rgba(16,24,40,.05)}
 @media(max-width:760px){.customer-preview{position:fixed;left:12px;right:12px;bottom:12px;width:auto;max-height:70vh}.progress-cell{min-width:210px}.preview-grid{grid-template-columns:1fr}}
+
+/* Large customer hover preview */
+.customer-preview{display:none;position:fixed;top:84px;right:24px;width:min(760px,calc(100vw - 48px));max-height:calc(100vh - 108px);overflow-y:auto;overflow-x:hidden;background:#fff;border:1px solid #dfe3e8;border-radius:20px;padding:24px;box-shadow:0 28px 90px rgba(15,23,42,.24);z-index:9999}
+.customer-preview.open{display:block}
+.preview-wrap:hover .customer-preview{display:none}
+.preview-wrap:hover .customer-preview.open{display:block}
+.preview-panel-head{display:flex;align-items:flex-start;gap:16px;justify-content:space-between;padding-bottom:16px;border-bottom:1px solid #eef1f4;margin-bottom:18px}
+.preview-title{font-size:20px;font-weight:900;letter-spacing:-.02em;margin:0}.preview-subtitle{font-size:11px;color:#98a2b3;margin-top:4px}
+.preview-rep-badge{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#f2f4f7;color:#475467;font-size:11px;font-weight:750;white-space:nowrap}
+.preview-grid-large{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.preview-grid-large>div{padding:12px 13px;border-radius:12px;background:#f8fafc;border:1px solid #eef1f4}
+.preview-grid-large span{font-size:10px;color:#98a2b3;display:block;margin-bottom:5px}.preview-grid-large b{font-size:13px;color:#172033;line-height:1.55;white-space:pre-wrap;word-break:break-word}
+.preview-grid-large .preview-full{grid-column:1/-1}
+.preview-progress-block{margin-top:22px;padding-top:18px;border-top:1px solid #e9edf2}.preview-progress-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.preview-progress-head b{font-size:14px}.preview-progress-head strong{font-size:22px;letter-spacing:-.02em}
+.percent-progress{height:10px;background:#edf0f3;border-radius:999px;overflow:hidden;margin-top:10px}.percent-progress>span{display:block;height:100%;background:#111827;border-radius:999px;transition:width .2s}
+.preview-progress-meta{font-size:10px;color:#98a2b3;margin-top:7px}.preview-stage-list{display:grid;gap:8px;margin-top:14px}
+.preview-stage{display:grid;grid-template-columns:28px 24px 1fr;align-items:center;gap:8px;padding:10px 12px;border:1px solid #e4e7ec;border-radius:11px;background:#fff;color:#667085}
+.preview-stage.done{background:#ecfdf3;border-color:#abefc6;color:#067647}.preview-stage-check{width:24px;height:24px;border-radius:50%;border:1px solid #d0d5dd;display:grid;place-items:center;font-size:12px;font-weight:900}
+.preview-stage.done .preview-stage-check{background:#12b76a;border-color:#12b76a;color:#fff}.preview-stage-index{font-size:10px;color:#98a2b3;font-weight:800}.preview-stage-label{font-size:12px;font-weight:750}
+.eye-btn{width:36px;height:36px}.eye-btn svg{display:block}
+
+/* Progress editor in salesperson modal */
+.modal-card{width:min(760px,100%)}.progress-editor-prominent{margin-top:18px;background:#f8fafc;border:1px solid #dde2e8;padding:18px;border-radius:16px}
+.edit-progress-percent{font-size:20px;letter-spacing:-.02em}.edit-percent-bar{margin-top:0}
+.progress-empty{padding:14px;border:1px dashed #d0d5dd;border-radius:11px;color:#667085;font-size:12px;text-align:center;background:#fff}
+.progress-check{padding:12px 14px;min-height:50px}.progress-check-label{font-size:13px}
+
+@media(max-width:800px){
+  .customer-preview{top:12px;right:12px;left:12px;width:auto;max-height:calc(100vh - 24px);padding:18px}
+  .preview-grid-large{grid-template-columns:1fr}
+  .preview-grid-large .preview-full{grid-column:auto}
+}
