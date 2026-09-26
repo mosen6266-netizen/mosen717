@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-26"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-27"></head><body>
 <div id="loginView" class="login-wrap"><div class="login-box"><div class="pill">管理员入口</div><h1 style="margin-top:12px">登录管理后台</h1><div class="muted">请输入管理员密码。</div><div class="field" style="margin-top:20px"><label>管理员密码</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button id="adminLogin" class="btn primary" style="width:100%;margin-top:18px">登录</button><div id="loginNote" class="notice" hidden></div></div></div>
 
 <div id="appView" hidden>
@@ -70,7 +70,12 @@
             <div class="field"><label>下拉选项（逗号分隔）</label><input id="fieldOptions" placeholder="例如 高,中,低"></div>
             <div class="field"><label>是否必填</label><select id="fieldRequired"><option value="false">非必填</option><option value="true">必填</option></select></div>
           </div>
-          <button id="addField" class="btn primary" style="margin-top:14px">添加登记项目</button>
+          <div class="row field-group-actions" style="margin-top:14px;flex-wrap:wrap">
+            <button id="addField" class="btn primary">添加登记项目</button>
+            <button id="setFieldGroup" class="btn soft" type="button">设置分栏</button>
+            <button id="removeFieldGroup" class="btn soft" type="button">移出分栏</button>
+            <span id="fieldSelectionCount" class="small">未选择字段</span>
+          </div>
           <div id="fieldNote" class="notice" hidden></div>
           <div id="fieldList" style="margin-top:16px"></div>
         </div>
@@ -103,7 +108,7 @@
       <section id="view-backup" class="admin-view" hidden>
         <div class="card">
           <div class="section-title"><div class="dot"></div><h2>系统完整备份 / 恢复</h2><div class="spacer"></div><span class="pill">一键迁移全部数据和设置</span></div>
-          <div class="backup-intro">V2 完整备份包含：全部业务员、登记字段与类型/顺序/下拉选项、客户进度与顺序、全部动态客户资料、每个客户已完成进度、操作日志。导出带完整性校验码；导入前先校验并自动下载当前系统安全备份。</div>
+          <div class="backup-intro">V3 完整备份包含：全部业务员、登记字段与类型/顺序/下拉选项、客户进度与顺序、全部动态客户资料、每个客户已完成进度、操作日志。导出带完整性校验码；导入前先校验并自动下载当前系统安全备份。</div>
           <div class="backup-actions">
             <button id="exportBackup" class="btn primary">导出完整备份</button>
             <button id="importBackup" class="btn soft">导入备份并恢复</button>
@@ -138,10 +143,10 @@
 
 <div id="fieldTypeModal" class="modal" hidden>
   <div class="modal-card" style="max-width:520px">
-    <div class="row"><h2 style="margin:0">更改字段类型</h2><div class="spacer"></div><button id="closeFieldTypeModal" class="btn soft" type="button">关闭</button></div>
+    <div class="row"><h2 style="margin:0">编辑字段</h2><div class="spacer"></div><button id="closeFieldTypeModal" class="btn soft" type="button">关闭</button></div>
     <div class="field" style="margin-top:18px">
       <label>字段名称</label>
-      <input id="fieldTypeFieldName" disabled>
+      <input id="fieldTypeFieldName" placeholder="请输入字段名称">
     </div>
     <div class="field" style="margin-top:14px">
       <label>字段类型</label>
@@ -161,15 +166,31 @@
       <input id="changeFieldOptions" placeholder="例如 高,中,低">
     </div>
     <div class="row" style="margin-top:18px">
-      <button id="saveFieldType" class="btn primary" type="button">保存类型</button>
+      <button id="saveFieldType" class="btn primary" type="button">保存修改</button>
       <button id="cancelFieldType" class="btn soft" type="button">取消</button>
     </div>
     <div id="fieldTypeNote" class="notice" hidden></div>
   </div>
 </div>
 
+<div id="fieldGroupModal" class="modal" hidden>
+  <div class="modal-card" style="max-width:520px">
+    <div class="row"><h2 style="margin:0">设置字段分栏</h2><div class="spacer"></div><button id="closeFieldGroupModal" class="btn soft" type="button">关闭</button></div>
+    <div class="small" style="margin-top:10px">把已勾选的登记字段归到同一个栏里。业务员登记、编辑和客户预览都会按这个栏单独显示。</div>
+    <div class="field" style="margin-top:16px">
+      <label>分栏名称</label>
+      <input id="fieldGroupName" placeholder="例如 基本信息 / 资金信息 / 钱包信息">
+    </div>
+    <div class="row" style="margin-top:18px">
+      <button id="saveFieldGroup" class="btn primary" type="button">保存分栏</button>
+      <button id="cancelFieldGroup" class="btn soft" type="button">取消</button>
+    </div>
+    <div id="fieldGroupNote" class="notice" hidden></div>
+  </div>
+</div>
+
 <script type="module">
-import { base44, esc, showMessage, buildFieldControl, initDateTimeControls, formatDate, downloadCsv } from './base44.js?v=20260926-23';
+import { base44, esc, showMessage, buildFieldControl, buildGroupedFieldControls, initDateTimeControls, formatDate, downloadCsv } from './base44.js?v=20260926-27';
 const ADMIN_HASH='78fd5f1e5a3f6eef05ab8d692942fd0ff4a8f4cc0e6087026626006a7fae452d';
 let reps=[],fields=[],customers=[],progressStages=[],editingCustomerId=null,draggedFieldId=null,dragSaving=false,draggedProgressId=null,progressDragSaving=false,editingFieldTypeId=null;
 let currentView='all',currentRepFilter='';
@@ -303,19 +324,28 @@ function newOrderForMovedItem(items,index){
 function fieldTypeLabel(type){
   return ({text:'文本',number:'数字',date:'日期时间（24小时制）',datetime:'日期时间（24小时制）',email:'邮箱',tel:'电话',textarea:'长文本',select:'下拉选项'})[type]||type||'文本';
 }
+function selectedFieldIds(){
+  return [...document.querySelectorAll('#fieldList .field-select-checkbox:checked')].map(x=>x.value);
+}
+function updateFieldSelectionCount(){
+  const ids=selectedFieldIds(),el=document.getElementById('fieldSelectionCount');
+  el.textContent=ids.length?('已选择 '+ids.length+' 个字段'):'未选择字段';
+}
 function renderFields(){
   const box=document.getElementById('fieldList');
-  if(!fields.length){box.innerHTML='<div class="empty">暂无登记项目</div>';return}
-  box.innerHTML='<div class="field-sort-list">'+fields.map((f,i)=>'<div class="field-sort-row" draggable="true" data-id="'+f.id+'"><div class="drag-handle">☰</div><div class="field-sort-name"><b>'+esc(f.label)+'</b><span>'+esc(fieldTypeLabel(f.field_type))+(f.required?' · 必填':'')+'</span></div><div class="field-sort-order">第 '+(i+1)+' 项</div><div class="row"><button class="btn soft change-type" data-id="'+f.id+'">更改类型</button><button class="btn soft toggle" data-id="'+f.id+'" data-active="'+(f.active!==false)+'">'+(f.active===false?'启用':'停用')+'</button><button class="btn danger remove" data-id="'+f.id+'">删除</button></div></div>').join('')+'</div>';
+  if(!fields.length){box.innerHTML='<div class="empty">暂无登记项目</div>';updateFieldSelectionCount();return}
+  box.innerHTML='<div class="field-sort-list">'+fields.map((f,i)=>'<div class="field-sort-row" draggable="true" data-id="'+f.id+'"><label class="field-select-wrap" title="选择字段"><input class="field-select-checkbox" type="checkbox" value="'+f.id+'"><span></span></label><div class="drag-handle">☰</div><div class="field-sort-name"><b>'+esc(f.label)+'</b><span>'+esc(fieldTypeLabel(f.field_type))+(f.required?' · 必填':'')+(f.group_name?' · <em class="field-group-badge">分栏：'+esc(f.group_name)+'</em>':'')+'</span></div><div class="field-sort-order">第 '+(i+1)+' 项</div><div class="row"><button class="btn soft change-type" data-id="'+f.id+'">编辑字段</button><button class="btn soft toggle" data-id="'+f.id+'" data-active="'+(f.active!==false)+'">'+(f.active===false?'启用':'停用')+'</button><button class="btn danger remove" data-id="'+f.id+'">删除</button></div></div>').join('')+'</div>';
+  box.querySelectorAll('.field-select-checkbox').forEach(cb=>{cb.onclick=e=>e.stopPropagation();cb.onchange=updateFieldSelectionCount});
   box.querySelectorAll('.change-type').forEach(b=>b.onclick=e=>{e.stopPropagation();openFieldTypeModal(b.dataset.id)});
   box.querySelectorAll('.toggle').forEach(b=>b.onclick=async e=>{e.stopPropagation();await base44.entities.FormField.update(b.dataset.id,{active:b.dataset.active!=='true'});await loadFields()});
   box.querySelectorAll('.remove').forEach(b=>b.onclick=async e=>{e.stopPropagation();if(!confirm('确定删除这个登记字段吗？'))return;await base44.entities.FormField.delete(b.dataset.id);await loadFields()});
   box.querySelectorAll('.field-sort-row').forEach(row=>{
-    row.ondragstart=e=>{draggedFieldId=row.dataset.id;row.classList.add('dragging');e.dataTransfer.effectAllowed='move'};
+    row.ondragstart=e=>{if(e.target.closest('.field-select-wrap')){e.preventDefault();return}draggedFieldId=row.dataset.id;row.classList.add('dragging');e.dataTransfer.effectAllowed='move'};
     row.ondragend=()=>{row.classList.remove('dragging');draggedFieldId=null};
     row.ondragover=e=>e.preventDefault();
     row.ondrop=async e=>{e.preventDefault();if(!draggedFieldId||draggedFieldId===row.dataset.id)return;const movedId=draggedFieldId,from=fields.findIndex(x=>x.id===movedId),to=fields.findIndex(x=>x.id===row.dataset.id);if(from<0||to<0)return;const next=[...fields],m=next.splice(from,1)[0];next.splice(to,0,m);fields=next;const newOrder=newOrderForMovedItem(fields,to);m.order=newOrder;renderFields();await saveFieldOrder(movedId,newOrder)}
   });
+  updateFieldSelectionCount();
 }
 function openFieldTypeModal(id){
   const field=fields.find(x=>String(x.id)===String(id));if(!field)return;
@@ -338,15 +368,49 @@ document.getElementById('closeFieldTypeModal').onclick=closeFieldTypeModal;
 document.getElementById('cancelFieldType').onclick=closeFieldTypeModal;
 document.getElementById('fieldTypeModal').onclick=e=>{if(e.target.id==='fieldTypeModal')closeFieldTypeModal()};
 document.getElementById('saveFieldType').onclick=async()=>{
-  const note=document.getElementById('fieldTypeNote'),type=document.getElementById('changeFieldType').value,options=document.getElementById('changeFieldOptions').value.trim();
+  const note=document.getElementById('fieldTypeNote'),label=document.getElementById('fieldTypeFieldName').value.trim(),type=document.getElementById('changeFieldType').value,options=document.getElementById('changeFieldOptions').value.trim();
   if(!editingFieldTypeId)return;
+  if(!label){showMessage(note,'字段名称不能为空。','err');return}
   if(type==='select'&&!options){showMessage(note,'下拉选项不能为空。','err');return}
   try{
-    await base44.entities.FormField.update(editingFieldTypeId,{field_type:type,options:type==='select'?options:''});
-    showMessage(note,'字段类型已更新。','ok');
+    await base44.entities.FormField.update(editingFieldTypeId,{label,field_type:type,options:type==='select'?options:''});
+    showMessage(note,'字段名称和类型已更新。','ok');
     await loadFields();
     setTimeout(closeFieldTypeModal,250);
   }catch(err){showMessage(note,'修改失败：'+(err?.message||String(err)),'err')}
+};
+function closeFieldGroupModal(){
+  document.getElementById('fieldGroupModal').hidden=true;
+  document.getElementById('fieldGroupNote').hidden=true;
+}
+document.getElementById('setFieldGroup').onclick=()=>{
+  const ids=selectedFieldIds(),note=document.getElementById('fieldNote');
+  if(!ids.length){showMessage(note,'请先勾选要放进同一栏的登记字段。','err');return}
+  const chosen=fields.filter(f=>ids.includes(String(f.id)));
+  const groups=[...new Set(chosen.map(f=>String(f.group_name||'').trim()).filter(Boolean))];
+  document.getElementById('fieldGroupName').value=groups.length===1?groups[0]:'';
+  document.getElementById('fieldGroupModal').hidden=false;
+  document.getElementById('fieldGroupNote').hidden=true;
+};
+document.getElementById('closeFieldGroupModal').onclick=closeFieldGroupModal;
+document.getElementById('cancelFieldGroup').onclick=closeFieldGroupModal;
+document.getElementById('fieldGroupModal').onclick=e=>{if(e.target.id==='fieldGroupModal')closeFieldGroupModal()};
+document.getElementById('saveFieldGroup').onclick=async()=>{
+  const ids=selectedFieldIds(),name=document.getElementById('fieldGroupName').value.trim(),note=document.getElementById('fieldGroupNote');
+  if(!ids.length){showMessage(note,'没有选择字段。','err');return}
+  if(!name){showMessage(note,'请输入分栏名称。','err');return}
+  try{
+    for(const id of ids){await retryRateLimited(()=>base44.entities.FormField.update(id,{group_name:name}));await waitMs(90)}
+    showMessage(note,'分栏已保存。','ok');await loadFields();setTimeout(closeFieldGroupModal,250);
+  }catch(err){showMessage(note,'保存分栏失败：'+(err?.message||String(err)),'err')}
+};
+document.getElementById('removeFieldGroup').onclick=async()=>{
+  const ids=selectedFieldIds(),note=document.getElementById('fieldNote');
+  if(!ids.length){showMessage(note,'请先勾选要移出分栏的字段。','err');return}
+  try{
+    for(const id of ids){await retryRateLimited(()=>base44.entities.FormField.update(id,{group_name:''}));await waitMs(90)}
+    showMessage(note,'所选字段已移出分栏。','ok');await loadFields();
+  }catch(err){showMessage(note,'移出分栏失败：'+(err?.message||String(err)),'err')}
 };
 
 async function saveFieldOrder(movedId,newOrder){
@@ -430,7 +494,7 @@ function previewCard(row){
   const repOptions=['<option value="">未指定</option>',...reps.map(r=>'<option value="'+esc(r.username)+'" '+(String(row.rep_username||'')===String(r.username||'')?'selected':'')+'>'+esc(r.display_name||r.username)+' ('+esc(r.username)+')</option>')].join('');
   const done=new Set((row.completed_progress_ids||[]).map(String));
   const progressHtml=progressStages.length?progressStages.map((p,i)=>'<label class="progress-check '+(done.has(String(p.id))?'checked':'')+'"><input type="checkbox" data-preview-progress-id="'+p.id+'" '+(done.has(String(p.id))?'checked':'')+'><span class="progress-check-index">'+(i+1)+'</span><span class="progress-check-label">'+esc(p.label)+'</span><span class="progress-check-mark">✓</span></label>').join(''):'<div class="progress-empty">管理员还没有设置客户进度。</div>';
-  return '<div class="preview-panel-head"><div><div class="preview-title">客户完整信息</div><div class="preview-subtitle">可直接编辑资料、业务员归属和客户进度</div></div><button class="preview-close-btn" type="button">关闭</button></div><div class="preview-meta-row"><div class="field"><label>所属业务员</label><select data-preview-rep>'+repOptions+'</select></div><div class="preview-readonly"><span>登记时间</span><b>'+esc(formatDate(row.created_date)||'—')+'</b></div></div><div class="preview-editor-grid">'+active.map(f=>buildFieldControl(f,row.data?.[f.field_key]??'')).join('')+'</div><div class="preview-progress-block preview-progress-edit"><div class="preview-progress-head"><b>客户进度</b><strong data-preview-percent style="color:'+s.solid+'">'+s.percent+'%</strong></div><div class="percent-progress"><span data-preview-bar style="width:'+s.percent+'%;background:'+s.solid+'"></span></div><div class="preview-progress-meta" data-preview-meta>已完成 '+s.completed+' / '+s.total+' 项</div><div class="progress-checklist preview-progress-checklist">'+progressHtml+'</div></div><div class="preview-save-bar"><div class="notice" data-preview-note hidden></div><div class="spacer"></div><button class="btn primary preview-save-btn" type="button">保存修改</button></div>';
+  return '<div class="preview-panel-head"><div><div class="preview-title">客户完整信息</div><div class="preview-subtitle">可直接编辑资料、业务员归属和客户进度</div></div><button class="preview-close-btn" type="button">关闭</button></div><div class="preview-meta-row"><div class="field"><label>所属业务员</label><select data-preview-rep>'+repOptions+'</select></div><div class="preview-readonly"><span>登记时间</span><b>'+esc(formatDate(row.created_date)||'—')+'</b></div></div><div class="preview-editor-grid">'+buildGroupedFieldControls(active,row.data||{})+'</div><div class="preview-progress-block preview-progress-edit"><div class="preview-progress-head"><b>客户进度</b><strong data-preview-percent style="color:'+s.solid+'">'+s.percent+'%</strong></div><div class="percent-progress"><span data-preview-bar style="width:'+s.percent+'%;background:'+s.solid+'"></span></div><div class="preview-progress-meta" data-preview-meta>已完成 '+s.completed+' / '+s.total+' 项</div><div class="progress-checklist preview-progress-checklist">'+progressHtml+'</div></div><div class="preview-save-bar"><div class="notice" data-preview-note hidden></div><div class="spacer"></div><button class="btn primary preview-save-btn" type="button">保存修改</button></div>';
 }
 function getPreviewPortal(){
   let portal=document.getElementById('customerPreviewPortal');
@@ -533,7 +597,7 @@ function stripRecord(entityName,row){
   const common={};
   const copy=(keys)=>keys.forEach(k=>{if(row[k]!==undefined)common[k]=row[k]});
   if(entityName==='SalesRep')copy(['username','display_name']);
-  if(entityName==='FormField')copy(['label','field_key','field_type','options','required','order','active']);
+  if(entityName==='FormField')copy(['label','field_key','field_type','options','required','order','active','group_name']);
   if(entityName==='ProgressStage')copy(['label','order','active']);
   if(entityName==='Customer')copy(['rep_username','data','completed_progress_ids']);
   if(entityName==='ActivityLog')copy(['actor_username','actor_display_name','actor_type','action_type','customer_id','customer_name','target_key','target_label','old_value','new_value','message','event_time','metadata']);
@@ -565,7 +629,7 @@ async function makeBackupObject(){
   const checksum=await sha256(JSON.stringify(entities));
   return {
     format:'MOSEN717_FULL_BACKUP',
-    version:2,
+    version:3,
     exported_at:new Date().toISOString(),
     checksum_sha256:checksum,
     counts:backupCounts(entities),
@@ -575,7 +639,8 @@ async function makeBackupObject(){
       datetime_storage:'YYYY-MM-DDTHH:mm',
       supports_select_options:true,
       supports_progress_mapping:true,
-      supports_activity_logs:true
+      supports_activity_logs:true,
+      supports_field_groups:true
     },
     entities
   };
@@ -741,7 +806,7 @@ function openCustomerEditor(row){
   if(!row)return;editingCustomerId=row.id;
   const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
   document.getElementById('editRep').innerHTML=['<option value="">未指定</option>',...reps.map(r=>'<option value="'+esc(r.username)+'" '+(String(row.rep_username||'')===String(r.username||'')?'selected':'')+'>'+esc(r.display_name||r.username)+' ('+esc(r.username)+')</option>')].join('');
-  document.getElementById('customerEditFields').innerHTML=active.map(f=>buildFieldControl(f,row.data?.[f.field_key]??'')).join('');
+  document.getElementById('customerEditFields').innerHTML=buildGroupedFieldControls(active,row.data||{});
   initDateTimeControls(document.getElementById('customerEditFields'));
   renderAdminProgressChecklist(row.completed_progress_ids||[]);
   customerEditNote.hidden=true;customerModal.hidden=false;
