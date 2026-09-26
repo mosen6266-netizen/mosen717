@@ -261,3 +261,73 @@ a{color:inherit}.topbar{height:66px;background:rgba(255,255,255,.94);backdrop-fi
   .datetime-24h{grid-template-columns:1fr 64px 10px 64px 48px;gap:5px}
   .dt-ampm{height:42px}
 }
+
+/* v24 fix datetime controls inside two-column forms */
+.datetime-field{min-width:0}
+.datetime-24h{
+  width:100%;
+  min-width:0;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 58px 8px 58px 46px;
+  align-items:center;
+  gap:5px
+}
+.datetime-24h .dt-date,
+.datetime-24h .dt-hour,
+.datetime-24h .dt-minute{
+  width:100%;
+  min-width:0;
+  box-sizing:border-box
+}
+.datetime-24h .dt-date{padding-left:10px;padding-right:8px}
+.datetime-24h .dt-hour,
+.datetime-24h .dt-minute{padding-left:6px;padding-right:4px}
+.datetime-24h .dt-sep{font-size:13px}
+.datetime-24h .dt-ampm{
+  min-width:0;
+  width:46px;
+  height:40px;
+  padding:0;
+  font-size:10px;
+  box-sizing:border-box
+}
+
+/* Keep modal field grids from forcing overflow */
+.modal-card .grid,
+.preview-editor-grid,
+#dynamicFields,
+#customerEditFields{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.modal-card .field,
+.preview-editor-grid .field,
+#dynamicFields .field,
+#customerEditFields .field{
+  min-width:0
+}
+
+/* Smaller laptop/modal widths: datetime controls use their own two-line layout */
+@media(max-width:980px){
+  .datetime-24h{
+    grid-template-columns:minmax(0,1fr) 56px 8px 56px 44px;
+    gap:4px
+  }
+  .datetime-24h .dt-ampm{width:44px}
+}
+
+/* On narrow content areas, put date on first row and time on second row */
+@media(max-width:760px){
+  .modal-card .grid,
+  .preview-editor-grid,
+  #dynamicFields,
+  #customerEditFields{
+    grid-template-columns:1fr
+  }
+  .datetime-24h{
+    grid-template-columns:56px 8px 56px 46px;
+  }
+  .datetime-24h .dt-date{
+    grid-column:1 / -1;
+    width:100%
+  }
+}
