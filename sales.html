@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>业务员客户登记</title><link rel="stylesheet" href="./style.css?v=20260926-11"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>业务员客户登记</title><link rel="stylesheet" href="./style.css?v=20260926-12"></head><body>
 <div class="topbar"><div><div class="brand">客户登记系统</div><div id="who" class="subbrand"></div></div><div class="row"><button id="newBtn" class="btn primary">＋ 登记客户</button><button id="logoutBtn" class="btn soft">退出</button></div></div>
 <div class="shell"><div class="stats"><div class="stat"><div id="myCount" class="n">0</div><div class="l">我的客户</div></div><div class="stat"><div id="fieldCount" class="n">0</div><div class="l">当前登记项目</div></div><div class="stat"><div id="todayCount" class="n">0</div><div class="l">今日新增</div></div></div>
 <div class="card"><div class="row"><div><h2 style="margin:0">我的客户</h2><div class="small">当前业务员：<b id="repLabel"></b></div></div><div class="spacer"></div><input id="search" class="search" placeholder="搜索客户信息…"></div><div id="customerList" style="margin-top:16px"></div></div></div>
@@ -69,22 +69,53 @@ function progressDetail(row){
   return '<div class="preview-progress-block"><div class="preview-progress-head"><b>客户进度</b><strong style="color:'+s.solid+'">'+s.percent+'%</strong></div><div class="percent-progress"><span style="width:'+s.percent+'%;background:'+s.solid+'"></span></div><div class="preview-progress-meta">已完成 '+s.completed+' / '+s.total+' 项</div><div class="preview-stage-list">'+progressStages.map((p,i)=>'<div class="preview-stage '+(s.done.has(String(p.id))?'done':'')+'"><span class="preview-stage-check">'+(s.done.has(String(p.id))?'✓':'')+'</span><span class="preview-stage-index">'+(i+1)+'</span><span class="preview-stage-label">'+esc(p.label)+'</span></div>').join('')+'</div></div>';
 }
 function previewCard(row){
-  return '<div class="preview-panel-head"><div><div class="preview-title">客户完整信息</div><div class="preview-subtitle">全部客户资料与跟进情况</div></div><span class="preview-rep-badge">'+esc(displayName||username)+'</span></div><div class="preview-grid preview-grid-large"><div><span>登记时间</span><b>'+esc(formatDate(row.created_date)||'—')+'</b></div>'+fields.map(f=>'<div class="'+(f.field_type==='textarea'?'preview-full':'')+'"><span>'+esc(f.label)+'</span><b>'+esc(row.data?.[f.field_key]||'—')+'</b></div>').join('')+'</div>'+progressDetail(row);
+  const s=progressStats(row);
+  const done=new Set((row.completed_progress_ids||[]).map(String));
+  const progressHtml=progressStages.length?progressStages.map((p,i)=>'<label class="progress-check '+(done.has(String(p.id))?'checked':'')+'"><input type="checkbox" data-preview-progress-id="'+p.id+'" '+(done.has(String(p.id))?'checked':'')+'><span class="progress-check-index">'+(i+1)+'</span><span class="progress-check-label">'+esc(p.label)+'</span><span class="progress-check-mark">✓</span></label>').join(''):'<div class="progress-empty">管理员还没有设置客户进度。</div>';
+  return '<div class="preview-panel-head"><div><div class="preview-title">客户完整信息</div><div class="preview-subtitle">可直接编辑客户资料和跟进进度</div></div><button class="preview-close-btn" type="button">关闭</button></div><div class="preview-meta-row"><div class="preview-readonly"><span>当前业务员</span><b>'+esc(displayName||username)+'</b></div><div class="preview-readonly"><span>登记时间</span><b>'+esc(formatDate(row.created_date)||'—')+'</b></div></div><div class="preview-editor-grid">'+fields.map(f=>buildFieldControl(f,row.data?.[f.field_key]??'')).join('')+'</div><div class="preview-progress-block preview-progress-edit"><div class="preview-progress-head"><b>客户进度</b><strong data-preview-percent style="color:'+s.solid+'">'+s.percent+'%</strong></div><div class="percent-progress"><span data-preview-bar style="width:'+s.percent+'%;background:'+s.solid+'"></span></div><div class="preview-progress-meta" data-preview-meta>已完成 '+s.completed+' / '+s.total+' 项</div><div class="progress-checklist preview-progress-checklist">'+progressHtml+'</div></div><div class="preview-save-bar"><div class="notice" data-preview-note hidden></div><div class="spacer"></div><button class="btn primary preview-save-btn" type="button">保存修改</button></div>';
 }
 function getPreviewPortal(){
   let portal=document.getElementById('customerPreviewPortal');
-  if(!portal){portal=document.createElement('div');portal.id='customerPreviewPortal';portal.className='customer-preview-portal';portal.hidden=true;document.body.appendChild(portal)}
+  if(!portal){portal=document.createElement('div');portal.id='customerPreviewPortal';portal.className='customer-preview-portal';portal.hidden=true;portal.dataset.pinned='0';document.body.appendChild(portal)}
   return portal;
+}
+function updatePreviewProgressUI(portal){
+  const ids=[...portal.querySelectorAll('[data-preview-progress-id]:checked')].map(x=>x.dataset.previewProgressId);
+  const s=progressStats({completed_progress_ids:ids});
+  const pct=portal.querySelector('[data-preview-percent]'),bar=portal.querySelector('[data-preview-bar]'),meta=portal.querySelector('[data-preview-meta]');
+  if(pct){pct.textContent=s.percent+'%';pct.style.color=s.solid}
+  if(bar){bar.style.width=s.percent+'%';bar.style.background=s.solid}
+  if(meta)meta.textContent='已完成 '+s.completed+' / '+s.total+' 项';
+}
+function attachSalesPreviewEditor(portal,row){
+  portal.querySelector('.preview-close-btn')?.addEventListener('click',()=>{portal.dataset.pinned='0';portal.hidden=true;portal.innerHTML=''});
+  portal.querySelectorAll('[data-preview-progress-id]').forEach(cb=>cb.onchange=()=>{cb.closest('.progress-check').classList.toggle('checked',cb.checked);updatePreviewProgressUI(portal)});
+  portal.querySelector('.preview-save-btn')?.addEventListener('click',async()=>{
+    const note=portal.querySelector('[data-preview-note]'),btn=portal.querySelector('.preview-save-btn');
+    const data={...(row.data||{})};portal.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
+    const completed_progress_ids=[...portal.querySelectorAll('[data-preview-progress-id]:checked')].map(x=>x.dataset.previewProgressId);
+    btn.disabled=true;showMessage(note,'正在保存…');
+    try{
+      await base44.entities.Customer.update(row.id,{rep_username:username,data,completed_progress_ids});
+      row.data=data;row.completed_progress_ids=completed_progress_ids;
+      showMessage(note,'已保存并同步。','ok');
+      await loadCustomers();
+      const fresh=customers.find(x=>String(x.id)===String(row.id))||row;
+      portal.innerHTML=previewCard(fresh);portal.hidden=false;portal.dataset.pinned='1';attachSalesPreviewEditor(portal,fresh);
+      const newNote=portal.querySelector('[data-preview-note]');showMessage(newNote,'已保存并同步。','ok');
+    }catch(err){showMessage(note,'保存失败：'+(err?.message||String(err)),'err');btn.disabled=false}
+  });
 }
 function bindPreviewHover(container){
   const portal=getPreviewPortal();let timer;
   const keep=()=>clearTimeout(timer);
-  const hideLater=()=>{clearTimeout(timer);timer=setTimeout(()=>{portal.hidden=true;portal.innerHTML=''},320)};
+  const hideLater=()=>{clearTimeout(timer);timer=setTimeout(()=>{if(portal.dataset.pinned!=='1'){portal.hidden=true;portal.innerHTML=''}},1200)};
   portal.onmouseenter=keep;portal.onmouseleave=hideLater;
   container.querySelectorAll('.preview-wrap').forEach(w=>{
-    const row=customers.find(x=>String(x.id)===String(w.dataset.id));
-    w.onmouseenter=()=>{keep();if(!row)return;portal.innerHTML=previewCard(row);portal.hidden=false};
-    w.onmouseleave=hideLater;
+    const findRow=()=>customers.find(x=>String(x.id)===String(w.dataset.id));
+    const open=(pin=false)=>{keep();const row=findRow();if(!row)return;portal.innerHTML=previewCard(row);portal.hidden=false;portal.dataset.pinned=pin?'1':'0';attachSalesPreviewEditor(portal,row)};
+    w.onmouseenter=()=>open(false);w.onmouseleave=hideLater;
+    w.querySelector('.eye-btn')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();open(true)});
   });
 }
 function renderCustomers(){
