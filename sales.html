@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>业务员客户登记</title><link rel="stylesheet" href="./style.css?v=20260926-12"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>业务员客户登记</title><link rel="stylesheet" href="./style.css?v=20260926-13"></head><body>
 <div class="topbar"><div><div class="brand">客户登记系统</div><div id="who" class="subbrand"></div></div><div class="row"><button id="newBtn" class="btn primary">＋ 登记客户</button><button id="logoutBtn" class="btn soft">退出</button></div></div>
 <div class="shell"><div class="stats"><div class="stat"><div id="myCount" class="n">0</div><div class="l">我的客户</div></div><div class="stat"><div id="fieldCount" class="n">0</div><div class="l">当前登记项目</div></div><div class="stat"><div id="todayCount" class="n">0</div><div class="l">今日新增</div></div></div>
 <div class="card"><div class="row"><div><h2 style="margin:0">我的客户</h2><div class="small">当前业务员：<b id="repLabel"></b></div></div><div class="spacer"></div><input id="search" class="search" placeholder="搜索客户信息…"></div><div id="customerList" style="margin-top:16px"></div></div></div>
@@ -109,7 +109,7 @@ function attachSalesPreviewEditor(portal,row){
 function bindPreviewHover(container){
   const portal=getPreviewPortal();let timer;
   const keep=()=>clearTimeout(timer);
-  const hideLater=()=>{clearTimeout(timer);timer=setTimeout(()=>{if(portal.dataset.pinned!=='1'){portal.hidden=true;portal.innerHTML=''}},1200)};
+  const hideLater=()=>{clearTimeout(timer);if(portal.dataset.pinned!=='1'){portal.hidden=true;portal.innerHTML=''}};
   portal.onmouseenter=keep;portal.onmouseleave=hideLater;
   container.querySelectorAll('.preview-wrap').forEach(w=>{
     const findRow=()=>customers.find(x=>String(x.id)===String(w.dataset.id));
@@ -118,11 +118,20 @@ function bindPreviewHover(container){
     w.querySelector('.eye-btn')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();open(true)});
   });
 }
+function fixedCustomerValue(row,key){return row.data?.[key]??''}
+function progressLabels(row){
+  const s=progressStats(row);
+  if(!progressStages.length)return {current:'未设置进度',next:'—'};
+  const completedOrdered=progressStages.filter(p=>s.done.has(String(p.id)));
+  const current=completedOrdered.length?completedOrdered[completedOrdered.length-1].label:'未开始';
+  const nextStage=progressStages.find(p=>!s.done.has(String(p.id)));
+  return {current,next:nextStage?nextStage.label:'已完成'};
+}
 function renderCustomers(){
   const q=document.getElementById('search').value.trim().toLowerCase(),rows=customers.filter(r=>JSON.stringify(r.data||{}).toLowerCase().includes(q));
   if(!rows.length){list.innerHTML='<div class="empty">暂无客户记录</div>';return}
   const eye='<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
-  list.innerHTML='<div class="table-wrap customer-table"><table><thead><tr><th>登记时间</th>'+fields.map(f=>'<th>'+esc(f.label)+'</th>').join('')+'<th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r);return '<tr class="customer-progress-row" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td>'+esc(formatDate(r.created_date))+'<span class="row-progress-badge">'+s.percent+'%</span></td>'+fields.map(f=>'<td>'+esc(r.data?.[f.field_key]||'')+'</td>').join('')+'<td><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button" aria-label="预览完整客户信息">'+eye+'</button></span><button class="btn soft edit" data-id="'+r.id+'">编辑</button><button class="btn danger del" data-id="'+r.id+'">删除</button></div></td></tr>'}).join('')+'</tbody></table></div>';
+  list.innerHTML='<div class="table-wrap customer-table fixed-customer-table"><table><thead><tr><th>转主号时间</th><th>客户姓名</th><th>手机号</th><th>邮箱</th><th>损失金额</th><th>目前进度</th><th>下一步</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r),pl=progressLabels(r);return '<tr class="customer-progress-row" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td>'+esc(fixedCustomerValue(r,'f_transfer_main_time')||'—')+'</td><td><b>'+esc(fixedCustomerValue(r,'f_customer_name')||'—')+'</b><span class="row-progress-badge">'+s.percent+'%</span></td><td>'+esc(fixedCustomerValue(r,'f_phone')||'—')+'</td><td>'+esc(fixedCustomerValue(r,'f_email')||'—')+'</td><td>'+esc(fixedCustomerValue(r,'f_loss_amount')||'—')+'</td><td><span class="current-progress-text" style="color:'+s.solid+'">'+esc(pl.current)+'</span></td><td>'+esc(pl.next)+'</td><td><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button" aria-label="预览完整客户信息">'+eye+'</button></span><button class="btn soft edit" data-id="'+r.id+'">编辑</button><button class="btn danger del" data-id="'+r.id+'">删除</button></div></td></tr>'}).join('')+'</tbody></table></div>';
   bindPreviewHover(list);
   list.querySelectorAll('.edit').forEach(b=>b.onclick=()=>openForm(customers.find(x=>x.id===b.dataset.id)));
   list.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{if(!confirm('确定删除这条客户记录吗？'))return;await base44.entities.Customer.delete(b.dataset.id);await loadCustomers()})
