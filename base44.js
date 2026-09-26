@@ -64,6 +64,22 @@ export function buildFieldControl(field, value = '') {
   return `<div class="field">${label}<input type="${type}" data-key="${key}" value="${esc(value)}" ${required}></div>`;
 }
 
+export function buildGroupedFieldControls(fields, data = {}) {
+  const sorted=[...(fields||[])].sort((a,b)=>(a.order||0)-(b.order||0));
+  const emitted=new Set();
+  return sorted.map(field=>{
+    const group=String(field.group_name||'').trim();
+    if(!group)return buildFieldControl(field,data[field.field_key]??'');
+    if(emitted.has(group))return '';
+    emitted.add(group);
+    const groupFields=sorted.filter(x=>String(x.group_name||'').trim()===group);
+    return `<section class="field-group-block">
+      <div class="field-group-title">${esc(group)}</div>
+      <div class="field-group-grid">${groupFields.map(f=>buildFieldControl(f,data[f.field_key]??'')).join('')}</div>
+    </section>`;
+  }).join('');
+}
+
 export function initDateTimeControls(root = document) {
   root.querySelectorAll('[data-datetime-wrap]').forEach(wrap => {
     if (wrap.dataset.ready === '1') return;
