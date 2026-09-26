@@ -121,3 +121,16 @@ a{color:inherit}.topbar{height:66px;background:rgba(255,255,255,.94);backdrop-fi
   .preview-meta-row,.preview-editor-grid{grid-template-columns:1fr}
   .preview-save-bar{bottom:-18px;margin:20px -18px -18px;padding:12px 18px}
 }
+
+/* v13 fixed customer list */
+.fixed-customer-table table{min-width:1180px}
+.fixed-customer-table th,.fixed-customer-table td{vertical-align:middle}
+.fixed-customer-table th:nth-child(1){min-width:150px}
+.fixed-customer-table th:nth-child(2){min-width:140px}
+.fixed-customer-table th:nth-child(3){min-width:140px}
+.fixed-customer-table th:nth-child(4){min-width:180px}
+.fixed-customer-table th:nth-child(5){min-width:130px}
+.fixed-customer-table th:nth-child(6){min-width:180px}
+.fixed-customer-table th:nth-child(7){min-width:180px}
+.fixed-customer-table th:nth-child(8){min-width:160px}
+.current-progress-text{font-weight:800}
