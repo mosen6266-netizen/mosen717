@@ -250,3 +250,14 @@ a{color:inherit}.topbar{height:66px;background:rgba(255,255,255,.94);backdrop-fi
 .brand-logo{width:36px;height:36px;flex:0 0 36px;display:block;object-fit:cover;border-radius:10px;box-shadow:0 1px 2px rgba(16,24,40,.12)}
 .login-brand-logo{width:58px;height:58px;display:block;object-fit:cover;border-radius:15px;margin:0 0 14px;box-shadow:0 4px 14px rgba(16,24,40,.13)}
 @media(max-width:680px){.brand-logo{width:32px;height:32px;flex-basis:32px;border-radius:9px}.brand-lockup{gap:9px}.brand{font-size:14px}}
+
+/* v22 24-hour minute-precision date/time fields */
+.datetime-24h{display:grid;grid-template-columns:minmax(145px,1.5fr) 72px 12px 72px 52px;align-items:center;gap:7px}
+.datetime-24h .dt-date,.datetime-24h .dt-hour,.datetime-24h .dt-minute{width:100%;min-width:0}
+.datetime-24h .dt-hour,.datetime-24h .dt-minute{font-variant-numeric:tabular-nums;text-align:center}
+.dt-sep{text-align:center;font-weight:850;color:#667085}
+.dt-ampm{height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;background:#111827;color:#fff;font-size:11px;font-weight:850;letter-spacing:.04em}
+@media(max-width:680px){
+  .datetime-24h{grid-template-columns:1fr 64px 10px 64px 48px;gap:5px}
+  .dt-ampm{height:42px}
+}
