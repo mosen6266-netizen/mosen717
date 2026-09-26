@@ -64,3 +64,40 @@ a{color:inherit}.topbar{height:66px;background:rgba(255,255,255,.94);backdrop-fi
   .preview-grid-large{grid-template-columns:1fr}
   .preview-grid-large .preview-full{grid-column:auto}
 }
+
+/* v11 global hover preview portal: never clipped by table */
+.customer-preview-portal{position:fixed;z-index:2147483000;top:50%;left:50%;transform:translate(-50%,-50%);width:min(920px,calc(100vw - 56px));max-height:calc(100vh - 56px);overflow-y:auto;overflow-x:hidden;background:#fff;border:1px solid #d8dee6;border-radius:22px;padding:28px;box-shadow:0 34px 120px rgba(15,23,42,.32)}
+.customer-preview-portal[hidden]{display:none!important}
+.customer-preview-portal .preview-title{font-size:22px}
+.customer-preview-portal .preview-grid-large{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.customer-preview-portal .preview-grid-large>div{padding:14px 15px}
+.customer-preview-portal .preview-progress-block{margin-top:26px;padding-top:22px}
+.customer-preview-portal .preview-stage-list{max-height:none}
+
+/* disable legacy in-table preview panels */
+.preview-wrap>.customer-preview{display:none!important}
+
+/* entire customer row as progress bar */
+.customer-table tbody tr.customer-progress-row{background:linear-gradient(90deg,var(--row-fill) 0,var(--row-fill) var(--row-progress),#fff var(--row-progress),#fff 100%);transition:background .18s}
+.customer-table tbody tr.customer-progress-row td{background:transparent}
+.customer-table tbody tr.customer-progress-row:hover{box-shadow:inset 4px 0 0 var(--row-solid)}
+.row-progress-badge{display:inline-flex;align-items:center;justify-content:center;margin-left:8px;padding:3px 7px;border-radius:999px;background:var(--row-solid);color:#fff;font-size:9px;font-weight:850;vertical-align:middle;min-width:34px}
+
+/* admin and salesperson progress editors */
+.admin-progress-editor{margin-top:18px}
+.progress-editor-prominent{display:block!important}
+.progress-checklist{display:grid!important;gap:8px!important}
+.progress-check{display:grid!important}
+
+/* consistent real eye icon */
+.eye-btn{width:36px;height:36px;border:0;border-radius:10px;background:#f2f4f7;color:#344054;cursor:pointer;display:grid;place-items:center}
+.eye-btn svg{display:block;width:18px;height:18px}
+.eye-btn:hover{background:#e9edf3;color:#111827}
+
+/* ensure modal can show all progress controls */
+.modal-card{width:min(800px,calc(100vw - 36px));max-height:92vh;overflow:auto}
+
+@media(max-width:800px){
+  .customer-preview-portal{top:12px;left:12px;right:12px;bottom:12px;transform:none;width:auto;max-height:none;padding:18px}
+  .customer-preview-portal .preview-grid-large{grid-template-columns:1fr}
+}
