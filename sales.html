@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-27"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-29"></head><body>
 <div class="topbar"><div class="brand-lockup"><img class="brand-logo" src="./mosen-logo.svg?v=20260926-18" alt="墨森"><div><div class="brand">墨森维权客户登记系统</div><div id="who" class="subbrand"></div></div></div><div class="row"><button id="newBtn" class="btn primary">＋ 登记客户</button><button id="logoutBtn" class="btn soft">退出</button></div></div>
 <div class="shell"><div class="stats"><div class="stat"><div id="myCount" class="n">0</div><div class="l">我的客户</div></div><div class="stat"><div id="fieldCount" class="n">0</div><div class="l">当前登记项目</div></div><div class="stat"><div id="todayCount" class="n">0</div><div class="l">今日新增</div></div></div>
 <div class="card"><div class="row"><div><h2 style="margin:0">我的客户</h2><div class="small">当前业务员：<b id="repLabel"></b></div></div><div class="spacer"></div><input id="search" class="search" placeholder="搜索客户信息…"></div><div id="customerList" style="margin-top:16px"></div></div></div>
@@ -18,6 +18,8 @@
 <script type="module">
 import { base44, esc, showMessage, buildFieldControl, buildGroupedFieldControls, initDateTimeControls, formatDate } from './base44.js?v=20260926-27';
 let username=localStorage.getItem('m717_rep_username')||'',displayName=localStorage.getItem('m717_rep_display_name')||'',fields=[],customers=[],progressStages=[],editingId=null;
+const CUSTOMER_PAGE_SIZE=50;
+let customerPage=1,customerHasNext=false,myCustomerTotal=0,myTodayTotal=0,customerCountTimer=null;
 const modal=document.getElementById('modal'),form=document.getElementById('customerForm'),note=document.getElementById('formNote'),list=document.getElementById('customerList');
 function unwrap(v){return Array.isArray(v)?v:(v?.items||[])}
 async function boot(){
@@ -26,14 +28,51 @@ async function boot(){
     const reps=unwrap(await base44.entities.SalesRep.list({sort:'-created_date',limit:500}));const rep=reps.find(r=>String(r.username||'').toLowerCase()===username.toLowerCase());
     if(!rep){localStorage.removeItem('m717_rep_username');location.href='./login.html';return}
     displayName=rep.display_name||rep.username;document.getElementById('who').textContent=displayName;document.getElementById('repLabel').textContent=username;
-    await Promise.all([loadFields(),loadProgress(),loadCustomers()]);
-    try{base44.entities.FormField.subscribe(()=>loadFields());base44.entities.ProgressStage.subscribe(()=>{loadProgress();loadCustomers()});base44.entities.Customer.subscribe(()=>loadCustomers());base44.entities.SalesRep.subscribe(()=>verifyRep())}catch(_){}
+    await Promise.all([loadFields(),loadProgress(),refreshMyCustomerCounts(),loadCustomers({resetPage:true})]);
+    try{base44.entities.FormField.subscribe(()=>loadFields());base44.entities.ProgressStage.subscribe(()=>{loadProgress();loadCustomers()});base44.entities.Customer.subscribe(()=>{loadCustomers();scheduleMyCustomerCountRefresh()});base44.entities.SalesRep.subscribe(()=>verifyRep())}catch(_){}
   }catch(_){location.href='./login.html'}
 }
 async function verifyRep(){const reps=unwrap(await base44.entities.SalesRep.list({sort:'-created_date',limit:500}));if(!reps.some(r=>String(r.username||'').toLowerCase()===username.toLowerCase())){localStorage.removeItem('m717_rep_username');location.href='./login.html'}}
 async function loadFields(){fields=unwrap(await base44.entities.FormField.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));document.getElementById('fieldCount').textContent=fields.length;renderForm()}
 async function loadProgress(){progressStages=unwrap(await base44.entities.ProgressStage.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));renderProgressChecklist()}
-async function loadCustomers(){const all=unwrap(await base44.entities.Customer.list({sort:'-created_date',limit:1000}));customers=all.filter(r=>String(r.rep_username||'').toLowerCase()===username.toLowerCase());renderCustomers();document.getElementById('myCount').textContent=customers.length;const today=new Date().toISOString().slice(0,10);document.getElementById('todayCount').textContent=customers.filter(x=>String(x.created_date||'').slice(0,10)===today).length}
+async function refreshMyCustomerCounts(){
+  let skip=0,total=0,todayTotal=0;
+  const today=new Date().toISOString().slice(0,10);
+  while(true){
+    const batch=unwrap(await base44.entities.Customer.filter({rep_username:username},'-created_date',500,skip));
+    total+=batch.length;
+    todayTotal+=batch.filter(x=>String(x.created_date||'').slice(0,10)===today).length;
+    if(batch.length<500)break;
+    skip+=500;
+  }
+  myCustomerTotal=total;myTodayTotal=todayTotal;
+  document.getElementById('myCount').textContent=total;
+  document.getElementById('todayCount').textContent=todayTotal;
+}
+function scheduleMyCustomerCountRefresh(){
+  clearTimeout(customerCountTimer);
+  customerCountTimer=setTimeout(()=>refreshMyCustomerCounts().catch(()=>{}),1200);
+}
+async function loadCustomers({resetPage=false,refreshCounts=false}={}){
+  if(resetPage)customerPage=1;
+  const skip=(customerPage-1)*CUSTOMER_PAGE_SIZE;
+  try{
+    let rows=unwrap(await base44.entities.Customer.filter({rep_username:username},'-created_date',CUSTOMER_PAGE_SIZE+1,skip));
+    customerHasNext=rows.length>CUSTOMER_PAGE_SIZE;
+    customers=rows.slice(0,CUSTOMER_PAGE_SIZE);
+    if(!customers.length&&customerPage>1){customerPage--;return loadCustomers({refreshCounts})}
+    renderCustomers();
+    if(refreshCounts)await refreshMyCustomerCounts();
+  }catch(err){list.innerHTML='<div class="notice err">读取客户失败：'+esc(err?.message||String(err))+'</div>'}
+}
+function salesPagerHtml(){
+  return '<div class="customer-pager"><div class="customer-pager-info">第 <b>'+customerPage+'</b> 页 · 每页 '+CUSTOMER_PAGE_SIZE+' 条'+(myCustomerTotal?' · 我的客户 '+myCustomerTotal+' 条':'')+'</div><div class="customer-pager-actions"><button id="salesPrevPage" class="btn soft" '+(customerPage<=1?'disabled':'')+'>上一页</button><button id="salesNextPage" class="btn soft" '+(!customerHasNext?'disabled':'')+'>下一页</button></div></div>';
+}
+function bindSalesPager(){
+  const prev=document.getElementById('salesPrevPage'),next=document.getElementById('salesNextPage');
+  if(prev)prev.onclick=async()=>{if(customerPage<=1)return;customerPage--;await loadCustomers();list.scrollIntoView({behavior:'smooth',block:'start'})};
+  if(next)next.onclick=async()=>{if(!customerHasNext)return;customerPage++;await loadCustomers();list.scrollIntoView({behavior:'smooth',block:'start'})};
+}
 function renderForm(data={}){const box=document.getElementById('dynamicFields');box.innerHTML=buildGroupedFieldControls(fields,data);initDateTimeControls(box)}
 function updateEditProgressSummary(){
   const total=progressStages.length;
@@ -186,12 +225,12 @@ async function logCustomerDiff(oldRow,newData,newProgress,customerId){
 }
 function renderCustomers(){
   const q=document.getElementById('search').value.trim().toLowerCase(),rows=customers.filter(r=>JSON.stringify(r.data||{}).toLowerCase().includes(q));
-  if(!rows.length){list.innerHTML='<div class="empty">暂无客户记录</div>';return}
+  if(!rows.length){list.innerHTML='<div class="empty">当前页暂无匹配客户</div>'+salesPagerHtml();bindSalesPager();return}
   const eye='<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
-  list.innerHTML='<div class="table-wrap customer-table fixed-customer-table"><table><thead><tr><th>转主号时间</th><th>客户姓名</th><th>手机号</th><th>邮箱</th><th>损失金额</th><th>目前进度</th><th>下一步</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r),pl=progressLabels(r);return '<tr class="customer-progress-row" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td data-label="转主号时间">'+esc(formatDate(fixedCustomerValue(r,'f_transfer_main_time'))||'—')+'</td><td data-label="客户姓名"><b>'+esc(fixedCustomerValue(r,'f_customer_name')||'—')+'</b><span class="row-progress-badge">'+s.percent+'%</span></td><td data-label="手机号">'+esc(fixedCustomerValue(r,'f_phone')||'—')+'</td><td data-label="邮箱">'+esc(fixedCustomerValue(r,'f_email')||'—')+'</td><td data-label="损失金额">'+esc(fixedCustomerValue(r,'f_loss_amount')||'—')+'</td><td data-label="目前进度"><span class="current-progress-text" style="color:'+s.solid+'">'+esc(pl.current)+'</span></td><td data-label="下一步">'+esc(pl.next)+'</td><td data-label="操作"><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button" aria-label="预览完整客户信息">'+eye+'</button></span><button class="btn soft edit" data-id="'+r.id+'">编辑</button><button class="btn danger del" data-id="'+r.id+'">删除</button></div></td></tr>'}).join('')+'</tbody></table></div>';
-  bindPreviewHover(list);
+  list.innerHTML='<div class="table-wrap customer-table fixed-customer-table"><table><thead><tr><th>转主号时间</th><th>客户姓名</th><th>手机号</th><th>邮箱</th><th>损失金额</th><th>目前进度</th><th>下一步</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r),pl=progressLabels(r);return '<tr class="customer-progress-row" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td data-label="转主号时间">'+esc(formatDate(fixedCustomerValue(r,'f_transfer_main_time'))||'—')+'</td><td data-label="客户姓名"><b>'+esc(fixedCustomerValue(r,'f_customer_name')||'—')+'</b><span class="row-progress-badge">'+s.percent+'%</span></td><td data-label="手机号">'+esc(fixedCustomerValue(r,'f_phone')||'—')+'</td><td data-label="邮箱">'+esc(fixedCustomerValue(r,'f_email')||'—')+'</td><td data-label="损失金额">'+esc(fixedCustomerValue(r,'f_loss_amount')||'—')+'</td><td data-label="目前进度"><span class="current-progress-text" style="color:'+s.solid+'">'+esc(pl.current)+'</span></td><td data-label="下一步">'+esc(pl.next)+'</td><td data-label="操作"><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button" aria-label="预览完整客户信息">'+eye+'</button></span><button class="btn soft edit" data-id="'+r.id+'">编辑</button><button class="btn danger del" data-id="'+r.id+'">删除</button></div></td></tr>'}).join('')+'</tbody></table></div>'+salesPagerHtml();
+  bindPreviewHover(list);bindSalesPager();
   list.querySelectorAll('.edit').forEach(b=>b.onclick=()=>openForm(customers.find(x=>x.id===b.dataset.id)));
-  list.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{if(!confirm('确定删除这条客户记录吗？'))return;const row=customers.find(x=>String(x.id)===String(b.dataset.id));if(row)await writeSalesLog({action_type:'customer_delete',customer_id:row.id,customer_name:customerNameFromData(row.data),message:(displayName||username)+' 删除了客户「'+customerNameFromData(row.data)+'」'});await base44.entities.Customer.delete(b.dataset.id);await loadCustomers()})
+  list.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{if(!confirm('确定删除这条客户记录吗？'))return;const row=customers.find(x=>String(x.id)===String(b.dataset.id));if(row)await writeSalesLog({action_type:'customer_delete',customer_id:row.id,customer_name:customerNameFromData(row.data),message:(displayName||username)+' 删除了客户「'+customerNameFromData(row.data)+'」'});await base44.entities.Customer.delete(b.dataset.id);await loadCustomers({refreshCounts:true})})
 }
 form.onsubmit=async e=>{
   e.preventDefault();const data={};form.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
@@ -210,7 +249,7 @@ form.onsubmit=async e=>{
         metadata:{fields:data,completed_progress_ids}
       });
     }
-    showMessage(note,'已保存并同步。','ok');await loadCustomers();setTimeout(()=>modal.hidden=true,400)
+    const wasNew=!editingId;showMessage(note,'已保存并同步。','ok');await loadCustomers({resetPage:wasNew,refreshCounts:true});setTimeout(()=>modal.hidden=true,400)
   }catch(err){showMessage(note,'保存失败：'+(err?.message||'未知错误'),'err')}
 };
 document.getElementById('newBtn').onclick=()=>openForm();document.getElementById('closeModal').onclick=()=>modal.hidden=true;document.getElementById('cancelEdit').onclick=()=>modal.hidden=true;document.getElementById('search').oninput=renderCustomers;document.getElementById('logoutBtn').onclick=()=>{localStorage.removeItem('m717_rep_username');localStorage.removeItem('m717_rep_display_name');location.href='./login.html'};modal.onclick=e=>{if(e.target===modal)modal.hidden=true};boot();
