@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>客户登记系统 · 管理员</title><link rel="stylesheet" href="./style.css?v=20260926-11"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>客户登记系统 · 管理员</title><link rel="stylesheet" href="./style.css?v=20260926-12"></head><body>
 <div id="loginView" class="login-wrap"><div class="login-box"><div class="pill">管理员入口</div><h1 style="margin-top:12px">登录管理后台</h1><div class="muted">请输入管理员密码。</div><div class="field" style="margin-top:20px"><label>管理员密码</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button id="adminLogin" class="btn primary" style="width:100%;margin-top:18px">登录</button><div id="loginNote" class="notice" hidden></div></div></div>
 
 <div id="appView" hidden>
@@ -289,28 +289,58 @@ function progressDetail(row){
 }
 function previewCard(row){
   const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
-  const rep=reps.find(r=>String(r.username||'')===String(row.rep_username||''));
-  return '<div class="preview-panel-head"><div><div class="preview-title">客户完整信息</div><div class="preview-subtitle">所有登记资料与当前跟进进度</div></div><span class="preview-rep-badge">'+esc(rep?.display_name||row.rep_username||'未指定业务员')+'</span></div><div class="preview-grid preview-grid-large"><div><span>业务员用户名</span><b>'+esc(row.rep_username||'—')+'</b></div><div><span>登记时间</span><b>'+esc(formatDate(row.created_date)||'—')+'</b></div>'+active.map(f=>'<div class="'+(f.field_type==='textarea'?'preview-full':'')+'"><span>'+esc(f.label)+'</span><b>'+esc(row.data?.[f.field_key]||'—')+'</b></div>').join('')+'</div>'+progressDetail(row);
+  const s=progressStats(row);
+  const repOptions=['<option value="">未指定</option>',...reps.map(r=>'<option value="'+esc(r.username)+'" '+(String(row.rep_username||'')===String(r.username||'')?'selected':'')+'>'+esc(r.display_name||r.username)+' ('+esc(r.username)+')</option>')].join('');
+  const done=new Set((row.completed_progress_ids||[]).map(String));
+  const progressHtml=progressStages.length?progressStages.map((p,i)=>'<label class="progress-check '+(done.has(String(p.id))?'checked':'')+'"><input type="checkbox" data-preview-progress-id="'+p.id+'" '+(done.has(String(p.id))?'checked':'')+'><span class="progress-check-index">'+(i+1)+'</span><span class="progress-check-label">'+esc(p.label)+'</span><span class="progress-check-mark">✓</span></label>').join(''):'<div class="progress-empty">管理员还没有设置客户进度。</div>';
+  return '<div class="preview-panel-head"><div><div class="preview-title">客户完整信息</div><div class="preview-subtitle">可直接编辑资料、业务员归属和客户进度</div></div><button class="preview-close-btn" type="button">关闭</button></div><div class="preview-meta-row"><div class="field"><label>所属业务员</label><select data-preview-rep>'+repOptions+'</select></div><div class="preview-readonly"><span>登记时间</span><b>'+esc(formatDate(row.created_date)||'—')+'</b></div></div><div class="preview-editor-grid">'+active.map(f=>buildFieldControl(f,row.data?.[f.field_key]??'')).join('')+'</div><div class="preview-progress-block preview-progress-edit"><div class="preview-progress-head"><b>客户进度</b><strong data-preview-percent style="color:'+s.solid+'">'+s.percent+'%</strong></div><div class="percent-progress"><span data-preview-bar style="width:'+s.percent+'%;background:'+s.solid+'"></span></div><div class="preview-progress-meta" data-preview-meta>已完成 '+s.completed+' / '+s.total+' 项</div><div class="progress-checklist preview-progress-checklist">'+progressHtml+'</div></div><div class="preview-save-bar"><div class="notice" data-preview-note hidden></div><div class="spacer"></div><button class="btn primary preview-save-btn" type="button">保存修改</button></div>';
 }
 function getPreviewPortal(){
   let portal=document.getElementById('customerPreviewPortal');
-  if(!portal){
-    portal=document.createElement('div');portal.id='customerPreviewPortal';portal.className='customer-preview-portal';portal.hidden=true;
-    document.body.appendChild(portal);
-  }
+  if(!portal){portal=document.createElement('div');portal.id='customerPreviewPortal';portal.className='customer-preview-portal';portal.hidden=true;portal.dataset.pinned='0';document.body.appendChild(portal)}
   return portal;
+}
+function updatePreviewProgressUI(portal){
+  const ids=[...portal.querySelectorAll('[data-preview-progress-id]:checked')].map(x=>x.dataset.previewProgressId);
+  const s=progressStats({completed_progress_ids:ids});
+  const pct=portal.querySelector('[data-preview-percent]'),bar=portal.querySelector('[data-preview-bar]'),meta=portal.querySelector('[data-preview-meta]');
+  if(pct){pct.textContent=s.percent+'%';pct.style.color=s.solid}
+  if(bar){bar.style.width=s.percent+'%';bar.style.background=s.solid}
+  if(meta)meta.textContent='已完成 '+s.completed+' / '+s.total+' 项';
+}
+function attachAdminPreviewEditor(portal,row){
+  portal.querySelector('.preview-close-btn')?.addEventListener('click',()=>{portal.dataset.pinned='0';portal.hidden=true;portal.innerHTML=''});
+  portal.querySelectorAll('[data-preview-progress-id]').forEach(cb=>cb.onchange=()=>{cb.closest('.progress-check').classList.toggle('checked',cb.checked);updatePreviewProgressUI(portal)});
+  portal.querySelector('.preview-save-btn')?.addEventListener('click',async()=>{
+    const note=portal.querySelector('[data-preview-note]'),btn=portal.querySelector('.preview-save-btn');
+    const data={...(row.data||{})};portal.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
+    const completed_progress_ids=[...portal.querySelectorAll('[data-preview-progress-id]:checked')].map(x=>x.dataset.previewProgressId);
+    const rep_username=portal.querySelector('[data-preview-rep]')?.value||'';
+    btn.disabled=true;showMessage(note,'正在保存…');
+    try{
+      await base44.entities.Customer.update(row.id,{rep_username,data,completed_progress_ids});
+      row.rep_username=rep_username;row.data=data;row.completed_progress_ids=completed_progress_ids;
+      showMessage(note,'已保存并同步。','ok');
+      await loadCustomers();
+      const fresh=customers.find(x=>String(x.id)===String(row.id))||row;
+      portal.innerHTML=previewCard(fresh);portal.hidden=false;portal.dataset.pinned='1';attachAdminPreviewEditor(portal,fresh);
+      const newNote=portal.querySelector('[data-preview-note]');showMessage(newNote,'已保存并同步。','ok');
+    }catch(err){showMessage(note,'保存失败：'+(err?.message||String(err)),'err');btn.disabled=false}
+  });
 }
 function bindPreviewHover(container){
   const portal=getPreviewPortal();let timer;
-  const keep=()=>{clearTimeout(timer)};
-  const hideLater=()=>{clearTimeout(timer);timer=setTimeout(()=>{portal.hidden=true;portal.innerHTML=''},320)};
+  const keep=()=>clearTimeout(timer);
+  const hideLater=()=>{clearTimeout(timer);timer=setTimeout(()=>{if(portal.dataset.pinned!=='1'){portal.hidden=true;portal.innerHTML=''}},1200)};
   portal.onmouseenter=keep;portal.onmouseleave=hideLater;
   container.querySelectorAll('.preview-wrap').forEach(w=>{
-    const id=w.dataset.id;const row=customers.find(x=>String(x.id)===String(id));
-    w.onmouseenter=()=>{keep();if(!row)return;portal.innerHTML=previewCard(row);portal.hidden=false};
-    w.onmouseleave=hideLater;
+    const findRow=()=>customers.find(x=>String(x.id)===String(w.dataset.id));
+    const open=(pin=false)=>{keep();const row=findRow();if(!row)return;portal.innerHTML=previewCard(row);portal.hidden=false;portal.dataset.pinned=pin?'1':'0';attachAdminPreviewEditor(portal,row)};
+    w.onmouseenter=()=>open(false);w.onmouseleave=hideLater;
+    w.querySelector('.eye-btn')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();open(true)});
   });
 }
+
 function updateAdminEditProgressSummary(){
   const total=progressStages.length;
   const checked=[...document.querySelectorAll('#adminProgressChecklist input[type="checkbox"]:checked')].length;
