@@ -21,6 +21,11 @@ export function hideMessage(el) {
 
 export function buildFieldControl(field, value = '') {
   const required = field.required ? 'required' : '';
+  if (field.field_type === 'datetime' && value) {
+    value = String(value).replace(' ', 'T');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) value += 'T00:00';
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) value = value.slice(0,16);
+  }
   const star = field.required ? ' <span class="req">*</span>' : '';
   const key = esc(field.field_key);
   const label = `<label>${esc(field.label)}${star}</label>`;
