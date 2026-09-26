@@ -411,11 +411,11 @@ async function loadLogs(){
     activityLogs=unwrap(await base44.entities.ActivityLog.list({sort:'-created_date',limit:1000}));
     const date=document.getElementById('logDate')?.value||new Date().toISOString().slice(0,10);
     const q=(document.getElementById('logSearch')?.value||'').trim().toLowerCase();
-    const todayRows=activityLogs.filter(x=>localLogDate(x.created_date)===date);
+    const todayRows=activityLogs.filter(x=>localLogDate(x.event_time||x.created_date)===date);
     document.getElementById('sidebarLogCount').textContent=todayRows.length;
     const rows=todayRows.filter(x=>(String(x.actor_display_name||'')+' '+String(x.actor_username||'')+' '+String(x.customer_name||'')+' '+String(x.message||'')).toLowerCase().includes(q));
     if(!rows.length){box.innerHTML='<div class="empty">这一天暂无匹配日志</div>';return}
-    box.innerHTML='<div class="activity-list">'+rows.map(x=>'<div class="activity-item"><div class="activity-time">'+esc(localLogTime(x.created_date))+'</div><div class="activity-body"><div class="activity-title">'+esc(x.message||'')+'</div><div class="activity-meta">'+esc(x.actor_display_name||x.actor_username||'未知业务员')+(x.customer_name?' · '+esc(x.customer_name):'')+(x.target_label?' · '+esc(x.target_label):'')+'</div></div></div>').join('')+'</div>';
+    box.innerHTML='<div class="activity-list">'+rows.map(x=>'<div class="activity-item"><div class="activity-time">'+esc(localLogTime(x.event_time||x.created_date))+'</div><div class="activity-body"><div class="activity-title">'+esc(x.message||'')+'</div><div class="activity-meta">'+esc(x.actor_display_name||x.actor_username||'未知业务员')+(x.customer_name?' · '+esc(x.customer_name):'')+(x.target_label?' · '+esc(x.target_label):'')+'</div></div></div>').join('')+'</div>';
   }catch(err){box.innerHTML='<div class="notice err">读取日志失败：'+esc(err?.message||String(err))+'</div>'}
 }
 async function getAllEntityRecords(entityName){
@@ -433,7 +433,7 @@ function stripRecord(entityName,row){
   if(entityName==='FormField')copy(['label','field_key','field_type','options','required','order','active']);
   if(entityName==='ProgressStage')copy(['label','order','active']);
   if(entityName==='Customer')copy(['rep_username','data','completed_progress_ids']);
-  if(entityName==='ActivityLog')copy(['actor_username','actor_display_name','actor_type','action_type','customer_id','customer_name','target_key','target_label','old_value','new_value','message','metadata']);
+  if(entityName==='ActivityLog')copy(['actor_username','actor_display_name','actor_type','action_type','customer_id','customer_name','target_key','target_label','old_value','new_value','message','event_time','metadata']);
   return common;
 }
 async function exportFullBackup(){
