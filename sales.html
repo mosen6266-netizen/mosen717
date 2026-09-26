@@ -142,6 +142,7 @@ async function writeSalesLog(payload){
       old_value:payload.old_value==null?'':String(payload.old_value),
       new_value:payload.new_value==null?'':String(payload.new_value),
       message:payload.message||'',
+      event_time:new Date().toISOString(),
       metadata:payload.metadata||{}
     });
   }catch(_){}
