@@ -97,6 +97,7 @@ function attachSalesPreviewEditor(portal,row){
     btn.disabled=true;showMessage(note,'正在保存…');
     try{
       await base44.entities.Customer.update(row.id,{rep_username:username,data,completed_progress_ids});
+      await logCustomerDiff(row,data,completed_progress_ids,row.id);
       row.data=data;row.completed_progress_ids=completed_progress_ids;
       showMessage(note,'已保存并同步。','ok');
       await loadCustomers();
@@ -127,6 +128,53 @@ function progressLabels(row){
   const nextStage=progressStages.find(p=>!s.done.has(String(p.id)));
   return {current,next:nextStage?nextStage.label:'已完成'};
 }
+async function writeSalesLog(payload){
+  try{
+    await base44.entities.ActivityLog.create({
+      actor_username:username,
+      actor_display_name:displayName||username,
+      actor_type:'sales',
+      action_type:payload.action_type||'update',
+      customer_id:payload.customer_id||'',
+      customer_name:payload.customer_name||'',
+      target_key:payload.target_key||'',
+      target_label:payload.target_label||'',
+      old_value:payload.old_value==null?'':String(payload.old_value),
+      new_value:payload.new_value==null?'':String(payload.new_value),
+      message:payload.message||'',
+      metadata:payload.metadata||{}
+    });
+  }catch(_){}
+}
+function customerNameFromData(data){return data?.f_customer_name||'未命名客户'}
+async function logCustomerDiff(oldRow,newData,newProgress,customerId){
+  const oldData=oldRow?.data||{}, name=customerNameFromData(newData);
+  for(const field of fields){
+    const before=oldData[field.field_key]??'',after=newData[field.field_key]??'';
+    if(String(before)!==String(after)){
+      await writeSalesLog({
+        action_type:'field_update',customer_id:customerId,customer_name:name,
+        target_key:field.field_key,target_label:field.label,old_value:before,new_value:after,
+        message:(displayName||username)+' 修改了 '+name+' 的「'+field.label+'」：'+(before||'空')+' → '+(after||'空')
+      });
+    }
+  }
+  const oldSet=new Set((oldRow?.completed_progress_ids||[]).map(String));
+  const newSet=new Set((newProgress||[]).map(String));
+  for(const p of progressStages){
+    const id=String(p.id),was=oldSet.has(id),now=newSet.has(id);
+    if(!was&&now) await writeSalesLog({
+      action_type:'progress_complete',customer_id:customerId,customer_name:name,
+      target_key:id,target_label:p.label,new_value:'已完成',
+      message:(displayName||username)+' 完成了 '+name+' 的客户进度「'+p.label+'」'
+    });
+    if(was&&!now) await writeSalesLog({
+      action_type:'progress_uncheck',customer_id:customerId,customer_name:name,
+      target_key:id,target_label:p.label,old_value:'已完成',new_value:'未完成',
+      message:(displayName||username)+' 取消了 '+name+' 的客户进度「'+p.label+'」'
+    });
+  }
+}
 function renderCustomers(){
   const q=document.getElementById('search').value.trim().toLowerCase(),rows=customers.filter(r=>JSON.stringify(r.data||{}).toLowerCase().includes(q));
   if(!rows.length){list.innerHTML='<div class="empty">暂无客户记录</div>';return}
@@ -134,14 +182,25 @@ function renderCustomers(){
   list.innerHTML='<div class="table-wrap customer-table fixed-customer-table"><table><thead><tr><th>转主号时间</th><th>客户姓名</th><th>手机号</th><th>邮箱</th><th>损失金额</th><th>目前进度</th><th>下一步</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r),pl=progressLabels(r);return '<tr class="customer-progress-row" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td data-label="转主号时间">'+esc(fixedCustomerValue(r,'f_transfer_main_time')||'—')+'</td><td data-label="客户姓名"><b>'+esc(fixedCustomerValue(r,'f_customer_name')||'—')+'</b><span class="row-progress-badge">'+s.percent+'%</span></td><td data-label="手机号">'+esc(fixedCustomerValue(r,'f_phone')||'—')+'</td><td data-label="邮箱">'+esc(fixedCustomerValue(r,'f_email')||'—')+'</td><td data-label="损失金额">'+esc(fixedCustomerValue(r,'f_loss_amount')||'—')+'</td><td data-label="目前进度"><span class="current-progress-text" style="color:'+s.solid+'">'+esc(pl.current)+'</span></td><td data-label="下一步">'+esc(pl.next)+'</td><td data-label="操作"><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button" aria-label="预览完整客户信息">'+eye+'</button></span><button class="btn soft edit" data-id="'+r.id+'">编辑</button><button class="btn danger del" data-id="'+r.id+'">删除</button></div></td></tr>'}).join('')+'</tbody></table></div>';
   bindPreviewHover(list);
   list.querySelectorAll('.edit').forEach(b=>b.onclick=()=>openForm(customers.find(x=>x.id===b.dataset.id)));
-  list.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{if(!confirm('确定删除这条客户记录吗？'))return;await base44.entities.Customer.delete(b.dataset.id);await loadCustomers()})
+  list.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{if(!confirm('确定删除这条客户记录吗？'))return;const row=customers.find(x=>String(x.id)===String(b.dataset.id));if(row)await writeSalesLog({action_type:'customer_delete',customer_id:row.id,customer_name:customerNameFromData(row.data),message:(displayName||username)+' 删除了客户「'+customerNameFromData(row.data)+'」'});await base44.entities.Customer.delete(b.dataset.id);await loadCustomers()})
 }
 form.onsubmit=async e=>{
   e.preventDefault();const data={};form.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
   const completed_progress_ids=[...document.querySelectorAll('#progressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
   try{
-    if(editingId)await base44.entities.Customer.update(editingId,{rep_username:username,data,completed_progress_ids});
-    else await base44.entities.Customer.create({rep_username:username,data,completed_progress_ids});
+    if(editingId){
+      const oldRow=customers.find(x=>String(x.id)===String(editingId));
+      await base44.entities.Customer.update(editingId,{rep_username:username,data,completed_progress_ids});
+      if(oldRow)await logCustomerDiff(oldRow,data,completed_progress_ids,editingId);
+    }else{
+      const created=await base44.entities.Customer.create({rep_username:username,data,completed_progress_ids});
+      const cid=created?.id||'';
+      await writeSalesLog({
+        action_type:'customer_create',customer_id:cid,customer_name:customerNameFromData(data),
+        message:(displayName||username)+' 登记了新客户「'+customerNameFromData(data)+'」',
+        metadata:{fields:data,completed_progress_ids}
+      });
+    }
     showMessage(note,'已保存并同步。','ok');await loadCustomers();setTimeout(()=>modal.hidden=true,400)
   }catch(err){showMessage(note,'保存失败：'+(err?.message||'未知错误'),'err')}
 };
