@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-25"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-26"></head><body>
 <div id="loginView" class="login-wrap"><div class="login-box"><div class="pill">管理员入口</div><h1 style="margin-top:12px">登录管理后台</h1><div class="muted">请输入管理员密码。</div><div class="field" style="margin-top:20px"><label>管理员密码</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button id="adminLogin" class="btn primary" style="width:100%;margin-top:18px">登录</button><div id="loginNote" class="notice" hidden></div></div></div>
 
 <div id="appView" hidden>
@@ -278,6 +278,28 @@ async function loadFields(){
     renderFields();
   }catch(err){document.getElementById('fieldList').innerHTML='<div class="notice err">读取登记字段失败：'+esc(err?.message||String(err))+'</div>'}
 }
+function waitMs(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
+async function retryRateLimited(fn,attempts=4){
+  let lastErr;
+  for(let i=0;i<attempts;i++){
+    try{return await fn()}catch(err){
+      lastErr=err;
+      const msg=String(err?.message||err||'').toLowerCase();
+      if(!msg.includes('rate limit')&&!msg.includes('429'))throw err;
+      if(i<attempts-1)await waitMs(500*(i+1));
+    }
+  }
+  throw lastErr;
+}
+function newOrderForMovedItem(items,index){
+  if(items.length<=1)return 1000;
+  const prev=index>0?Number(items[index-1]?.order):null;
+  const next=index<items.length-1?Number(items[index+1]?.order):null;
+  if(index===0)return Number.isFinite(next)?next-1:0;
+  if(index===items.length-1)return Number.isFinite(prev)?prev+1:index+1;
+  if(Number.isFinite(prev)&&Number.isFinite(next))return (prev+next)/2;
+  return index+1;
+}
 function fieldTypeLabel(type){
   return ({text:'文本',number:'数字',date:'日期时间（24小时制）',datetime:'日期时间（24小时制）',email:'邮箱',tel:'电话',textarea:'长文本',select:'下拉选项'})[type]||type||'文本';
 }
@@ -292,7 +314,7 @@ function renderFields(){
     row.ondragstart=e=>{draggedFieldId=row.dataset.id;row.classList.add('dragging');e.dataTransfer.effectAllowed='move'};
     row.ondragend=()=>{row.classList.remove('dragging');draggedFieldId=null};
     row.ondragover=e=>e.preventDefault();
-    row.ondrop=async e=>{e.preventDefault();if(!draggedFieldId||draggedFieldId===row.dataset.id)return;const from=fields.findIndex(x=>x.id===draggedFieldId),to=fields.findIndex(x=>x.id===row.dataset.id);const next=[...fields],m=next.splice(from,1)[0];next.splice(to,0,m);fields=next;renderFields();await saveFieldOrder()}
+    row.ondrop=async e=>{e.preventDefault();if(!draggedFieldId||draggedFieldId===row.dataset.id)return;const movedId=draggedFieldId,from=fields.findIndex(x=>x.id===movedId),to=fields.findIndex(x=>x.id===row.dataset.id);if(from<0||to<0)return;const next=[...fields],m=next.splice(from,1)[0];next.splice(to,0,m);fields=next;const newOrder=newOrderForMovedItem(fields,to);m.order=newOrder;renderFields();await saveFieldOrder(movedId,newOrder)}
   });
 }
 function openFieldTypeModal(id){
@@ -327,10 +349,16 @@ document.getElementById('saveFieldType').onclick=async()=>{
   }catch(err){showMessage(note,'修改失败：'+(err?.message||String(err)),'err')}
 };
 
-async function saveFieldOrder(){
+async function saveFieldOrder(movedId,newOrder){
   const note=document.getElementById('fieldNote');dragSaving=true;
-  try{for(let i=0;i<fields.length;i++)await base44.entities.FormField.update(fields[i].id,{order:i+1});fields=fields.map((f,i)=>({...f,order:i+1}));renderFields();showMessage(note,'排序已保存。','ok')}
-  catch(err){showMessage(note,'保存排序失败：'+(err?.message||String(err)),'err');await loadFields()}finally{dragSaving=false}
+  try{
+    await retryRateLimited(()=>base44.entities.FormField.update(movedId,{order:newOrder}));
+    showMessage(note,'排序已保存。','ok');
+  }catch(err){
+    showMessage(note,'保存排序失败：'+(err?.message||String(err)),'err');
+    await waitMs(800);
+    await loadFields();
+  }finally{dragSaving=false}
 }
 document.getElementById('addField').onclick=async()=>{
   const label=document.getElementById('fieldLabel').value.trim(),type=document.getElementById('fieldType').value,options=document.getElementById('fieldOptions').value.trim(),required=document.getElementById('fieldRequired').value==='true',note=document.getElementById('fieldNote');
@@ -358,13 +386,19 @@ function renderProgress(){
     row.ondragstart=e=>{draggedProgressId=row.dataset.id;row.classList.add('dragging');e.dataTransfer.effectAllowed='move'};
     row.ondragend=()=>{row.classList.remove('dragging');draggedProgressId=null};
     row.ondragover=e=>e.preventDefault();
-    row.ondrop=async e=>{e.preventDefault();if(!draggedProgressId||draggedProgressId===row.dataset.id)return;const from=progressStages.findIndex(x=>x.id===draggedProgressId),to=progressStages.findIndex(x=>x.id===row.dataset.id);const next=[...progressStages],m=next.splice(from,1)[0];next.splice(to,0,m);progressStages=next;renderProgress();await saveProgressOrder()}
+    row.ondrop=async e=>{e.preventDefault();if(!draggedProgressId||draggedProgressId===row.dataset.id)return;const movedId=draggedProgressId,from=progressStages.findIndex(x=>x.id===movedId),to=progressStages.findIndex(x=>x.id===row.dataset.id);if(from<0||to<0)return;const next=[...progressStages],m=next.splice(from,1)[0];next.splice(to,0,m);progressStages=next;const newOrder=newOrderForMovedItem(progressStages,to);m.order=newOrder;renderProgress();await saveProgressOrder(movedId,newOrder)}
   });
 }
-async function saveProgressOrder(){
+async function saveProgressOrder(movedId,newOrder){
   const note=document.getElementById('progressNote');progressDragSaving=true;
-  try{for(let i=0;i<progressStages.length;i++)await base44.entities.ProgressStage.update(progressStages[i].id,{order:i+1});progressStages=progressStages.map((p,i)=>({...p,order:i+1}));renderProgress();showMessage(note,'进度顺序已保存。','ok')}
-  catch(err){showMessage(note,'保存排序失败：'+(err?.message||String(err)),'err');await loadProgress()}finally{progressDragSaving=false}
+  try{
+    await retryRateLimited(()=>base44.entities.ProgressStage.update(movedId,{order:newOrder}));
+    showMessage(note,'进度顺序已保存。','ok');
+  }catch(err){
+    showMessage(note,'进度排序保存失败：'+(err?.message||String(err)),'err');
+    await waitMs(800);
+    await loadProgress();
+  }finally{progressDragSaving=false}
 }
 document.getElementById('addProgress').onclick=async()=>{
   const label=document.getElementById('progressLabel').value.trim(),note=document.getElementById('progressNote');if(!label){showMessage(note,'请输入进度名称。','err');return}
