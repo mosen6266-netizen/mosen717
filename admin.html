@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>客户登记系统 · 管理员</title><link rel="stylesheet" href="./style.css?v=20260926-14"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>客户登记系统 · 管理员</title><link rel="stylesheet" href="./style.css?v=20260926-15"></head><body>
 <div id="loginView" class="login-wrap"><div class="login-box"><div class="pill">管理员入口</div><h1 style="margin-top:12px">登录管理后台</h1><div class="muted">请输入管理员密码。</div><div class="field" style="margin-top:20px"><label>管理员密码</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button id="adminLogin" class="btn primary" style="width:100%;margin-top:18px">登录</button><div id="loginNote" class="notice" hidden></div></div></div>
 
 <div id="appView" hidden>
@@ -20,6 +20,8 @@
         <button class="sidebar-item" data-view="reps"><span class="sidebar-icon">◎</span><span class="sidebar-text">业务员管理</span></button>
         <button class="sidebar-item" data-view="fields"><span class="sidebar-icon">≡</span><span class="sidebar-text">登记字段</span><span id="sidebarFieldCount" class="sidebar-count">0</span></button>
         <button class="sidebar-item" data-view="progress"><span class="sidebar-icon">✓</span><span class="sidebar-text">客户进度</span><span id="sidebarProgressCount" class="sidebar-count">0</span></button>
+        <button class="sidebar-item" data-view="logs"><span class="sidebar-icon">◷</span><span class="sidebar-text">日志</span><span id="sidebarLogCount" class="sidebar-count">0</span></button>
+        <button class="sidebar-item" data-view="backup"><span class="sidebar-icon">⇅</span><span class="sidebar-text">备份恢复</span></button>
       </div>
     </aside>
 
@@ -85,6 +87,32 @@
           <div id="progressList" style="margin-top:16px"></div>
         </div>
       </section>
+      <section id="view-logs" class="admin-view" hidden>
+        <div class="card">
+          <div class="row">
+            <div><h2 style="margin:0">业务员操作日志</h2><div class="small">默认显示今天。新增登记字段或客户进度后，日志会自动按当时的名称记录。</div></div>
+            <div class="spacer"></div>
+            <input id="logDate" type="date" class="search" style="min-width:160px">
+            <input id="logSearch" class="search" placeholder="搜索业务员 / 客户 / 操作…">
+            <button id="refreshLogs" class="btn soft">刷新</button>
+          </div>
+          <div id="logList" style="margin-top:16px"></div>
+        </div>
+      </section>
+
+      <section id="view-backup" class="admin-view" hidden>
+        <div class="card">
+          <div class="section-title"><div class="dot"></div><h2>系统完整备份 / 恢复</h2><div class="spacer"></div><span class="pill">一键迁移全部数据和设置</span></div>
+          <div class="backup-intro">备份文件包含：全部业务员、登记字段与顺序、客户进度与顺序、全部客户资料、每个客户已完成进度、操作日志。以后重新部署同一套系统后，可直接导入恢复。</div>
+          <div class="backup-actions">
+            <button id="exportBackup" class="btn primary">导出完整备份</button>
+            <button id="importBackup" class="btn soft">导入备份并恢复</button>
+            <input id="backupFile" type="file" accept=".json,application/json" hidden>
+          </div>
+          <div class="notice warn" style="margin-top:16px">导入恢复会清空当前系统的数据，然后按备份文件重建。请只导入本系统导出的备份文件。</div>
+          <div id="backupNote" class="notice" hidden></div>
+        </div>
+      </section>
     </main>
   </div>
 </div>
@@ -143,21 +171,27 @@ function showAdminView(view,repUsername=''){
   if(view==='reps'){document.getElementById('view-reps').hidden=false;document.querySelector('.sidebar-item[data-view="reps"]').classList.add('active')}
   if(view==='fields'){document.getElementById('view-fields').hidden=false;document.querySelector('.sidebar-item[data-view="fields"]').classList.add('active')}
   if(view==='progress'){document.getElementById('view-progress').hidden=false;document.querySelector('.sidebar-item[data-view="progress"]').classList.add('active')}
+  if(view==='logs'){document.getElementById('view-logs').hidden=false;document.querySelector('.sidebar-item[data-view="logs"]').classList.add('active');loadLogs()}
+  if(view==='backup'){document.getElementById('view-backup').hidden=false;document.querySelector('.sidebar-item[data-view="backup"]').classList.add('active')}
 }
 document.querySelector('.sidebar-item[data-view="all"]').onclick=()=>showAdminView('all');
 document.querySelector('.sidebar-item[data-view="reps"]').onclick=()=>showAdminView('reps');
 document.querySelector('.sidebar-item[data-view="fields"]').onclick=()=>showAdminView('fields');
 document.querySelector('.sidebar-item[data-view="progress"]').onclick=()=>showAdminView('progress');
+document.querySelector('.sidebar-item[data-view="logs"]').onclick=()=>showAdminView('logs');
+document.querySelector('.sidebar-item[data-view="backup"]').onclick=()=>showAdminView('backup');
 
 async function enter(){
   loginView.hidden=true;appView.hidden=false;
-  await Promise.all([loadReps(),loadFields(),loadProgress(),loadCustomers()]);
+  document.getElementById('logDate').value=new Date().toISOString().slice(0,10);
+  await Promise.all([loadReps(),loadFields(),loadProgress(),loadCustomers(),loadLogs()]);
   showAdminView('all');
   try{
     base44.entities.SalesRep.subscribe(()=>loadReps());
     base44.entities.FormField.subscribe(()=>{if(!dragSaving){loadFields();loadCustomers()}});
     base44.entities.ProgressStage.subscribe(()=>{if(!progressDragSaving){loadProgress();loadCustomers()}});
     base44.entities.Customer.subscribe(()=>loadCustomers());
+    base44.entities.ActivityLog.subscribe(()=>loadLogs());
   }catch(_){}
 }
 document.getElementById('adminLogin').onclick=async()=>{
@@ -359,6 +393,116 @@ function renderAdminProgressChecklist(completed=[]){
   updateAdminEditProgressSummary();
 }
 
+function localLogDate(value){
+  if(!value)return '';
+  const d=new Date(value);if(Number.isNaN(d.getTime()))return String(value).slice(0,10);
+  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+day;
+}
+function localLogTime(value){
+  if(!value)return '';
+  const d=new Date(value);if(Number.isNaN(d.getTime()))return String(value).replace('T',' ').slice(0,16);
+  return d.toLocaleString('zh-CN',{hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+let activityLogs=[];
+async function loadLogs(){
+  const box=document.getElementById('logList');if(!box)return;
+  try{
+    activityLogs=unwrap(await base44.entities.ActivityLog.list({sort:'-created_date',limit:1000}));
+    const date=document.getElementById('logDate')?.value||new Date().toISOString().slice(0,10);
+    const q=(document.getElementById('logSearch')?.value||'').trim().toLowerCase();
+    const todayRows=activityLogs.filter(x=>localLogDate(x.created_date)===date);
+    document.getElementById('sidebarLogCount').textContent=todayRows.length;
+    const rows=todayRows.filter(x=>(String(x.actor_display_name||'')+' '+String(x.actor_username||'')+' '+String(x.customer_name||'')+' '+String(x.message||'')).toLowerCase().includes(q));
+    if(!rows.length){box.innerHTML='<div class="empty">这一天暂无匹配日志</div>';return}
+    box.innerHTML='<div class="activity-list">'+rows.map(x=>'<div class="activity-item"><div class="activity-time">'+esc(localLogTime(x.created_date))+'</div><div class="activity-body"><div class="activity-title">'+esc(x.message||'')+'</div><div class="activity-meta">'+esc(x.actor_display_name||x.actor_username||'未知业务员')+(x.customer_name?' · '+esc(x.customer_name):'')+(x.target_label?' · '+esc(x.target_label):'')+'</div></div></div>').join('')+'</div>';
+  }catch(err){box.innerHTML='<div class="notice err">读取日志失败：'+esc(err?.message||String(err))+'</div>'}
+}
+async function getAllEntityRecords(entityName){
+  const all=[];let skip=0;
+  while(true){
+    const part=unwrap(await base44.entities[entityName].list({sort:'created_date',limit:500,skip}));
+    all.push(...part);if(part.length<500)break;skip+=500;
+  }
+  return all;
+}
+function stripRecord(entityName,row){
+  const common={};
+  const copy=(keys)=>keys.forEach(k=>{if(row[k]!==undefined)common[k]=row[k]});
+  if(entityName==='SalesRep')copy(['username','display_name']);
+  if(entityName==='FormField')copy(['label','field_key','field_type','options','required','order','active']);
+  if(entityName==='ProgressStage')copy(['label','order','active']);
+  if(entityName==='Customer')copy(['rep_username','data','completed_progress_ids']);
+  if(entityName==='ActivityLog')copy(['actor_username','actor_display_name','actor_type','action_type','customer_id','customer_name','target_key','target_label','old_value','new_value','message','metadata']);
+  return common;
+}
+async function exportFullBackup(){
+  const note=document.getElementById('backupNote');showMessage(note,'正在读取全部系统数据…');
+  try{
+    const [salesReps,formFields,progressStagesData,customerData,logsData]=await Promise.all([
+      getAllEntityRecords('SalesRep'),getAllEntityRecords('FormField'),getAllEntityRecords('ProgressStage'),getAllEntityRecords('Customer'),getAllEntityRecords('ActivityLog')
+    ]);
+    const backup={
+      format:'MOSEN717_FULL_BACKUP',version:1,exported_at:new Date().toISOString(),
+      entities:{
+        SalesRep:salesReps.map(x=>({...stripRecord('SalesRep',x),__old_id:x.id})),
+        FormField:formFields.map(x=>({...stripRecord('FormField',x),__old_id:x.id})),
+        ProgressStage:progressStagesData.map(x=>({...stripRecord('ProgressStage',x),__old_id:x.id})),
+        Customer:customerData.map(x=>({...stripRecord('Customer',x),__old_id:x.id})),
+        ActivityLog:logsData.map(x=>({...stripRecord('ActivityLog',x),__old_id:x.id}))
+      }
+    };
+    const blob=new Blob([JSON.stringify(backup,null,2)],{type:'application/json;charset=utf-8'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='mosen717-完整备份-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();URL.revokeObjectURL(a.href);a.remove();
+    showMessage(note,'完整备份已导出。请妥善保存这个 JSON 文件。','ok');
+  }catch(err){showMessage(note,'备份失败：'+(err?.message||String(err)),'err')}
+}
+async function wipeEntity(entityName){
+  while(true){
+    const rows=unwrap(await base44.entities[entityName].list({limit:500}));
+    if(!rows.length)break;
+    for(const row of rows)await base44.entities[entityName].delete(row.id);
+  }
+}
+function withoutOldId(row){const x={...row};delete x.__old_id;return x}
+function createdId(result){return result?.id||result?.data?.id||result?.entity?.id||''}
+async function importFullBackup(file){
+  const note=document.getElementById('backupNote');
+  try{
+    const raw=JSON.parse(await file.text());
+    if(raw?.format!=='MOSEN717_FULL_BACKUP'||!raw?.entities)throw new Error('这不是有效的 mosen717 完整备份文件');
+    if(!confirm('导入会清空当前系统全部业务员、登记字段、进度、客户和日志，然后按备份恢复。确定继续吗？'))return;
+    showMessage(note,'正在清空当前数据并恢复，请不要关闭页面…','warn');
+
+    for(const name of ['ActivityLog','Customer','ProgressStage','FormField','SalesRep'])await wipeEntity(name);
+
+    for(const row of raw.entities.SalesRep||[])await base44.entities.SalesRep.create(withoutOldId(row));
+    for(const row of raw.entities.FormField||[])await base44.entities.FormField.create(withoutOldId(row));
+
+    const progressMap={};
+    for(const row of raw.entities.ProgressStage||[]){
+      const old=row.__old_id,created=await base44.entities.ProgressStage.create(withoutOldId(row));progressMap[String(old)]=createdId(created);
+    }
+
+    const customerMap={};
+    for(const row of raw.entities.Customer||[]){
+      const old=row.__old_id,clean=withoutOldId(row);
+      clean.completed_progress_ids=(clean.completed_progress_ids||[]).map(id=>progressMap[String(id)]||'').filter(Boolean);
+      const created=await base44.entities.Customer.create(clean);customerMap[String(old)]=createdId(created);
+    }
+
+    for(const row of raw.entities.ActivityLog||[]){
+      const clean=withoutOldId(row);
+      if(clean.customer_id)clean.customer_id=customerMap[String(clean.customer_id)]||clean.customer_id;
+      if(clean.action_type?.startsWith('progress_')&&clean.target_key)clean.target_key=progressMap[String(clean.target_key)]||clean.target_key;
+      await base44.entities.ActivityLog.create(clean);
+    }
+
+    await Promise.all([loadReps(),loadFields(),loadProgress(),loadCustomers(),loadLogs()]);
+    showMessage(note,'恢复完成。当前系统已经按备份文件重建。','ok');
+  }catch(err){showMessage(note,'导入失败：'+(err?.message||String(err)),'err')}
+}
+
 async function loadCustomers(){
   try{
     customers=unwrap(await base44.entities.Customer.list({sort:'-created_date',limit:1000}));
@@ -413,6 +557,12 @@ document.getElementById('exportBtn').onclick=()=>{
 };
 document.getElementById('customerSearch').oninput=renderCustomers;document.getElementById('refreshCustomers').onclick=loadCustomers;document.getElementById('refreshReps').onclick=loadReps;
 document.getElementById('closeCustomerModal').onclick=()=>customerModal.hidden=true;document.getElementById('cancelCustomerEdit').onclick=()=>customerModal.hidden=true;customerModal.onclick=e=>{if(e.target===customerModal)customerModal.hidden=true};
+document.getElementById('logDate').onchange=loadLogs;
+document.getElementById('logSearch').oninput=loadLogs;
+document.getElementById('refreshLogs').onclick=loadLogs;
+document.getElementById('exportBackup').onclick=exportFullBackup;
+document.getElementById('importBackup').onclick=()=>document.getElementById('backupFile').click();
+document.getElementById('backupFile').onchange=async e=>{const file=e.target.files?.[0];if(file)await importFullBackup(file);e.target.value=''};
 document.getElementById('logoutBtn').onclick=()=>{localStorage.removeItem('m717_admin');location.reload()};
 if(localStorage.getItem('m717_admin')==='1')enter();
 </script></body></html>
