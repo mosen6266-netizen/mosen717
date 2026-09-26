@@ -49,7 +49,15 @@ function renderProgressChecklist(completed=[]){
   box.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.onchange=()=>{cb.closest('.progress-check').classList.toggle('checked',cb.checked);updateEditProgressSummary()});
   updateEditProgressSummary();
 }
-function openForm(row=null){editingId=row?.id||null;document.getElementById('modalTitle').textContent=editingId?'编辑客户':'登记客户';renderForm(row?.data||{});renderProgressChecklist(row?.completed_progress_ids||[]);note.hidden=true;modal.hidden=false}
+function localToday(){const d=new Date(),y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+day}
+function openForm(row=null){
+  editingId=row?.id||null;
+  document.getElementById('modalTitle').textContent=editingId?'编辑客户':'登记客户';
+  const formData=row?.data?{...row.data}:{f_transfer_main_time:localToday()};
+  renderForm(formData);
+  renderProgressChecklist(row?.completed_progress_ids||[]);
+  note.hidden=true;modal.hidden=false
+}
 function progressStats(row){
   const done=new Set((row.completed_progress_ids||[]).map(String));
   const total=progressStages.length;
