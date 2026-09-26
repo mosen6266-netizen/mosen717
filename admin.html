@@ -122,13 +122,13 @@
     <div class="row"><h2 style="margin:0">编辑客户</h2><div class="spacer"></div><button id="closeCustomerModal" class="btn soft">关闭</button></div>
     <div class="field" style="margin-top:18px"><label>所属业务员</label><select id="editRep"></select></div>
     <form id="customerEditForm">
+      <div id="customerEditFields" class="grid" style="margin-top:18px"></div>
       <div class="progress-editor progress-editor-prominent admin-progress-editor">
         <div class="section-title" style="margin:0 0 10px"><div class="dot"></div><h3 style="margin:0">客户进度</h3><div class="spacer"></div><strong id="adminEditProgressPercent" class="edit-progress-percent">0%</strong></div>
         <div class="percent-progress edit-percent-bar"><span id="adminEditProgressBar" style="width:0%"></span></div>
         <div class="small" style="margin:8px 0 12px">管理员也可以直接勾选或取消客户进度。</div>
         <div id="adminProgressChecklist" class="progress-checklist"></div>
       </div>
-      <div id="customerEditFields" class="grid" style="margin-top:16px"></div>
       <div class="row" style="margin-top:18px"><button class="btn primary" type="submit">保存修改</button><button id="cancelCustomerEdit" class="btn soft" type="button">取消</button></div>
     </form>
     <div id="customerEditNote" class="notice" hidden></div>
