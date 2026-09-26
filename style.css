@@ -358,3 +358,10 @@ a{color:inherit}.topbar{height:66px;background:rgba(255,255,255,.94);backdrop-fi
   .field-group-grid{grid-template-columns:1fr}
   .field-group-block{padding:14px}
 }
+
+/* v28 show salesperson under customer name in admin list */
+.customer-name-stack{display:flex;flex-direction:column;gap:4px;min-width:0}
+.customer-name-line{display:flex;align-items:center;gap:7px;min-width:0}
+.customer-name-line b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.customer-owner-line{font-size:10px;line-height:1.25;color:#667085;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:680px){.customer-owner-line{font-size:11px}}
