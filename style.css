@@ -134,3 +134,104 @@ a{color:inherit}.topbar{height:66px;background:rgba(255,255,255,.94);backdrop-fi
 .fixed-customer-table th:nth-child(7){min-width:180px}
 .fixed-customer-table th:nth-child(8){min-width:160px}
 .current-progress-text{font-weight:800}
+
+/* v14 responsive customer list: no horizontal customer-row scrolling */
+.shell{max-width:1680px}
+.admin-shell{max-width:1880px;grid-template-columns:240px minmax(0,1fr)}
+.admin-main,.card,#customerList{min-width:0}
+.fixed-customer-table{overflow:visible}
+.fixed-customer-table table{min-width:0;table-layout:fixed}
+.fixed-customer-table th,.fixed-customer-table td{font-size:clamp(12px,.78vw,14px);padding:12px 10px;overflow-wrap:anywhere}
+.fixed-customer-table th:nth-child(1){width:12%}
+.fixed-customer-table th:nth-child(2){width:13%}
+.fixed-customer-table th:nth-child(3){width:12%}
+.fixed-customer-table th:nth-child(4){width:16%}
+.fixed-customer-table th:nth-child(5){width:11%}
+.fixed-customer-table th:nth-child(6){width:14%}
+.fixed-customer-table th:nth-child(7){width:14%}
+.fixed-customer-table th:nth-child(8){width:170px}
+.fixed-customer-table .btn{padding:9px 11px;font-size:12px}
+.fixed-customer-table .row.nowrap{gap:6px}
+.fixed-customer-table .eye-btn{width:34px;height:34px;flex:0 0 34px}
+
+/* Laptop and smaller: each customer becomes a responsive information bubble */
+@media(max-width:1450px){
+  .shell{max-width:none;padding:20px}
+  .admin-shell{grid-template-columns:220px minmax(0,1fr);gap:14px}
+  .fixed-customer-table{border:0;background:transparent;overflow:visible}
+  .fixed-customer-table table,.fixed-customer-table tbody{display:block;width:100%;min-width:0;background:transparent}
+  .fixed-customer-table thead{display:none}
+  .fixed-customer-table tbody{display:grid;gap:12px}
+  .fixed-customer-table tbody tr.customer-progress-row{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:0;
+    width:100%;
+    border:1px solid #e4e7ec;
+    border-radius:16px;
+    overflow:hidden;
+    background:linear-gradient(90deg,var(--row-fill) 0,var(--row-fill) var(--row-progress),#fff var(--row-progress),#fff 100%);
+    box-shadow:0 5px 16px rgba(16,24,40,.035)
+  }
+  .fixed-customer-table tbody tr.customer-progress-row td{
+    display:block;
+    width:auto!important;
+    min-width:0!important;
+    border:0;
+    border-right:1px solid rgba(228,231,236,.86);
+    border-bottom:1px solid rgba(228,231,236,.86);
+    padding:12px 13px;
+    font-size:13px;
+    line-height:1.4;
+    word-break:break-word
+  }
+  .fixed-customer-table tbody tr.customer-progress-row td:before{
+    content:attr(data-label);
+    display:block;
+    margin-bottom:5px;
+    color:#667085;
+    font-size:10px;
+    font-weight:750
+  }
+  .fixed-customer-table tbody tr.customer-progress-row td:nth-child(4n){border-right:0}
+  .fixed-customer-table tbody tr.customer-progress-row td:nth-last-child(-n+4){border-bottom:0}
+  .fixed-customer-table tbody tr.customer-progress-row td[data-label="操作"]{display:flex;align-items:center}
+  .fixed-customer-table tbody tr.customer-progress-row td[data-label="操作"] .row{flex-wrap:nowrap}
+  .row-progress-badge{font-size:10px}
+}
+
+/* Compact notebook */
+@media(max-width:1100px){
+  body{font-size:14px}
+  .admin-shell{grid-template-columns:1fr}
+  .admin-sidebar{position:static}
+  .sidebar-card{display:flex;gap:6px;overflow-x:auto;overflow-y:hidden;align-items:center;scrollbar-width:thin}
+  .sidebar-section-title,.sidebar-divider{display:none}
+  .rep-customer-nav{display:flex;gap:6px;max-height:none;overflow:visible}
+  .sidebar-item{width:auto;min-width:max-content;margin:0}
+  .fixed-customer-table tbody tr.customer-progress-row{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .fixed-customer-table tbody tr.customer-progress-row td{border-right:1px solid rgba(228,231,236,.86);border-bottom:1px solid rgba(228,231,236,.86)}
+  .fixed-customer-table tbody tr.customer-progress-row td:nth-child(2n){border-right:0}
+  .fixed-customer-table tbody tr.customer-progress-row td:nth-last-child(-n+2){border-bottom:0}
+  .card{padding:18px}
+  .search{min-width:190px;font-size:14px}
+  .btn{font-size:13px}
+}
+
+/* Very small screens: one field per line, still no horizontal customer scrolling */
+@media(max-width:680px){
+  .shell{padding:12px}
+  .topbar{padding:0 12px}
+  .fixed-customer-table tbody tr.customer-progress-row{grid-template-columns:1fr}
+  .fixed-customer-table tbody tr.customer-progress-row td{
+    border-right:0!important;
+    border-bottom:1px solid rgba(228,231,236,.86)!important;
+    font-size:14px;
+    padding:12px 14px
+  }
+  .fixed-customer-table tbody tr.customer-progress-row td:last-child{border-bottom:0!important}
+  .fixed-customer-table tbody tr.customer-progress-row td:before{font-size:11px}
+  .fixed-customer-table tbody tr.customer-progress-row td[data-label="操作"] .row{width:100%;flex-wrap:wrap}
+  .fixed-customer-table tbody tr.customer-progress-row td[data-label="操作"] .btn{flex:1;min-width:80px}
+  .fixed-customer-table tbody tr.customer-progress-row td[data-label="操作"] .preview-wrap{flex:0 0 auto}
+}
