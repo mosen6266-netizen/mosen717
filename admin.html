@@ -19,6 +19,7 @@
         <div class="sidebar-section-title">管理</div>
         <button class="sidebar-item" data-view="reps"><span class="sidebar-icon">◎</span><span class="sidebar-text">业务员管理</span></button>
         <button class="sidebar-item" data-view="fields"><span class="sidebar-icon">≡</span><span class="sidebar-text">登记字段</span><span id="sidebarFieldCount" class="sidebar-count">0</span></button>
+        <button class="sidebar-item" data-view="progress"><span class="sidebar-icon">✓</span><span class="sidebar-text">客户进度</span><span id="sidebarProgressCount" class="sidebar-count">0</span></button>
       </div>
     </aside>
 
@@ -72,6 +73,18 @@
           <div id="fieldList" style="margin-top:16px"></div>
         </div>
       </section>
+
+      <section id="view-progress" class="admin-view" hidden>
+        <div class="card">
+          <div class="section-title"><div class="dot"></div><h2>客户进度管理</h2><div class="spacer"></div><span class="pill">拖拽排序 · 业务员自动同步</span></div>
+          <div class="row">
+            <div class="field" style="min-width:300px;flex:1"><label>新增进度名称</label><input id="progressLabel" placeholder="例如 已联系 / 跟进中 / 已成交"></div>
+            <button id="addProgress" class="btn primary" style="align-self:flex-end">添加进度</button>
+          </div>
+          <div id="progressNote" class="notice" hidden></div>
+          <div id="progressList" style="margin-top:16px"></div>
+        </div>
+      </section>
     </main>
   </div>
 </div>
@@ -87,9 +100,8 @@
 
 <script type="module">
 import { base44, esc, showMessage, buildFieldControl, formatDate, downloadCsv } from './base44.js';
-
 const ADMIN_HASH='78fd5f1e5a3f6eef05ab8d692942fd0ff4a8f4cc0e6087026626006a7fae452d';
-let reps=[],fields=[],customers=[],editingCustomerId=null,draggedFieldId=null,dragSaving=false;
+let reps=[],fields=[],customers=[],progressStages=[],editingCustomerId=null,draggedFieldId=null,dragSaving=false,draggedProgressId=null,progressDragSaving=false;
 let currentView='all',currentRepFilter='';
 
 const loginView=document.getElementById('loginView'),appView=document.getElementById('appView'),loginNote=document.getElementById('loginNote');
@@ -117,31 +129,25 @@ function showAdminView(view,repUsername=''){
       document.getElementById('customerViewTitle').textContent=name+' 的客户';
       document.getElementById('customerViewDesc').textContent='只显示业务员 '+repUsername+' 登记的客户。';
     }
-    renderCustomers();
-    return;
+    renderCustomers();return;
   }
-
-  if(view==='reps'){
-    document.getElementById('view-reps').hidden=false;
-    document.querySelector('.sidebar-item[data-view="reps"]').classList.add('active');
-  }
-  if(view==='fields'){
-    document.getElementById('view-fields').hidden=false;
-    document.querySelector('.sidebar-item[data-view="fields"]').classList.add('active');
-  }
+  if(view==='reps'){document.getElementById('view-reps').hidden=false;document.querySelector('.sidebar-item[data-view="reps"]').classList.add('active')}
+  if(view==='fields'){document.getElementById('view-fields').hidden=false;document.querySelector('.sidebar-item[data-view="fields"]').classList.add('active')}
+  if(view==='progress'){document.getElementById('view-progress').hidden=false;document.querySelector('.sidebar-item[data-view="progress"]').classList.add('active')}
 }
-
 document.querySelector('.sidebar-item[data-view="all"]').onclick=()=>showAdminView('all');
 document.querySelector('.sidebar-item[data-view="reps"]').onclick=()=>showAdminView('reps');
 document.querySelector('.sidebar-item[data-view="fields"]').onclick=()=>showAdminView('fields');
+document.querySelector('.sidebar-item[data-view="progress"]').onclick=()=>showAdminView('progress');
 
 async function enter(){
   loginView.hidden=true;appView.hidden=false;
-  await Promise.all([loadReps(),loadFields(),loadCustomers()]);
+  await Promise.all([loadReps(),loadFields(),loadProgress(),loadCustomers()]);
   showAdminView('all');
   try{
     base44.entities.SalesRep.subscribe(()=>loadReps());
     base44.entities.FormField.subscribe(()=>{if(!dragSaving){loadFields();loadCustomers()}});
+    base44.entities.ProgressStage.subscribe(()=>{if(!progressDragSaving){loadProgress();loadCustomers()}});
     base44.entities.Customer.subscribe(()=>loadCustomers());
   }catch(_){}
 }
@@ -156,8 +162,7 @@ async function loadReps(){
   try{
     reps=unwrap(await base44.entities.SalesRep.list({sort:'-created_date',limit:500}));
     document.getElementById('salesCount').textContent=reps.length;
-    renderReps();
-    renderSidebar();
+    renderReps();renderSidebar();
   }catch(err){document.getElementById('repList').innerHTML='<div class="notice err">读取业务员失败：'+esc(err?.message||String(err))+'</div>'}
 }
 function renderSidebar(){
@@ -168,11 +173,6 @@ function renderSidebar(){
     return '<button class="sidebar-item" data-view="rep" data-rep="'+esc(r.username||'')+'"><span class="sidebar-avatar">'+esc(String(label).slice(0,1).toUpperCase())+'</span><span class="sidebar-text"><b>'+esc(label)+'</b><small>'+esc(r.username||'')+'</small></span><span class="sidebar-count">'+count+'</span></button>';
   }).join('');
   nav.querySelectorAll('.sidebar-item[data-rep]').forEach(btn=>btn.onclick=()=>showAdminView('rep',btn.dataset.rep));
-  if(currentView==='rep'&&currentRepFilter){
-    const current=[...nav.querySelectorAll('.sidebar-item[data-rep]')].find(x=>x.dataset.rep===currentRepFilter);
-    if(current)current.classList.add('active');
-    else showAdminView('all');
-  }
 }
 function renderReps(){
   const box=document.getElementById('repList');
@@ -181,17 +181,15 @@ function renderReps(){
     const count=customers.filter(c=>String(c.rep_username||'')===String(r.username||'')).length;
     return '<tr><td><b>'+esc(r.username||'')+'</b></td><td>'+esc(r.display_name||'')+'</td><td>'+count+'</td><td>'+esc(formatDate(r.created_date))+'</td><td><button class="btn danger delrep" data-id="'+r.id+'">删除</button></td></tr>';
   }).join('')+'</tbody></table></div>';
-  box.querySelectorAll('.delrep').forEach(b=>b.onclick=async()=>{if(!confirm('删除这个业务员用户名？'))return;try{await base44.entities.SalesRep.delete(b.dataset.id);await loadReps()}catch(err){alert('删除失败：'+(err?.message||err))}})
+  box.querySelectorAll('.delrep').forEach(b=>b.onclick=async()=>{if(!confirm('删除这个业务员用户名？'))return;await base44.entities.SalesRep.delete(b.dataset.id);await loadReps()})
 }
 document.getElementById('createRep').onclick=async()=>{
   const username=document.getElementById('repUsername').value.trim(),display_name=document.getElementById('repDisplayName').value.trim(),note=document.getElementById('repNote');
   if(!username){showMessage(note,'请输入业务员用户名。','err');return}
-  showMessage(note,'正在创建业务员用户名…');
   try{
     const current=unwrap(await base44.entities.SalesRep.list({sort:'-created_date',limit:500}));
     if(current.some(r=>String(r.username||'').toLowerCase()===username.toLowerCase())){showMessage(note,'这个用户名已经存在。','err');return}
-    await base44.entities.SalesRep.create({username,display_name});
-    showMessage(note,'业务员用户名已创建：'+username,'ok');
+    await base44.entities.SalesRep.create({username,display_name});showMessage(note,'业务员用户名已创建：'+username,'ok');
     document.getElementById('repUsername').value='';document.getElementById('repDisplayName').value='';await loadReps()
   }catch(err){showMessage(note,'创建失败：'+(err?.message||String(err)),'err')}
 };
@@ -200,39 +198,27 @@ async function loadFields(){
   try{
     fields=unwrap(await base44.entities.FormField.list({sort:'order',limit:500})).sort((a,b)=>(a.order||0)-(b.order||0));
     const activeCount=fields.filter(f=>f.active!==false).length;
-    document.getElementById('activeFields').textContent=activeCount;
-    document.getElementById('sidebarFieldCount').textContent=activeCount;
+    document.getElementById('activeFields').textContent=activeCount;document.getElementById('sidebarFieldCount').textContent=activeCount;
     renderFields();
   }catch(err){document.getElementById('fieldList').innerHTML='<div class="notice err">读取登记字段失败：'+esc(err?.message||String(err))+'</div>'}
 }
 function renderFields(){
   const box=document.getElementById('fieldList');
   if(!fields.length){box.innerHTML='<div class="empty">暂无登记项目</div>';return}
-  box.innerHTML='<div class="field-sort-list">'+fields.map((f,i)=>'<div class="field-sort-row" draggable="true" data-id="'+f.id+'"><div class="drag-handle" title="按住拖拽">☰</div><div class="field-sort-name"><b>'+esc(f.label)+'</b><span>'+esc(f.field_type)+(f.required?' · 必填':'')+'</span></div><div class="field-sort-order">第 '+(i+1)+' 项</div><div class="row"><button class="btn soft toggle" data-id="'+f.id+'" data-active="'+(f.active!==false)+'">'+(f.active===false?'启用':'停用')+'</button><button class="btn danger remove" data-id="'+f.id+'">删除</button></div></div>').join('')+'</div>';
+  box.innerHTML='<div class="field-sort-list">'+fields.map((f,i)=>'<div class="field-sort-row" draggable="true" data-id="'+f.id+'"><div class="drag-handle">☰</div><div class="field-sort-name"><b>'+esc(f.label)+'</b><span>'+esc(f.field_type)+(f.required?' · 必填':'')+'</span></div><div class="field-sort-order">第 '+(i+1)+' 项</div><div class="row"><button class="btn soft toggle" data-id="'+f.id+'" data-active="'+(f.active!==false)+'">'+(f.active===false?'启用':'停用')+'</button><button class="btn danger remove" data-id="'+f.id+'">删除</button></div></div>').join('')+'</div>';
   box.querySelectorAll('.toggle').forEach(b=>b.onclick=async e=>{e.stopPropagation();await base44.entities.FormField.update(b.dataset.id,{active:b.dataset.active!=='true'});await loadFields()});
   box.querySelectorAll('.remove').forEach(b=>b.onclick=async e=>{e.stopPropagation();if(!confirm('确定删除这个登记字段吗？'))return;await base44.entities.FormField.delete(b.dataset.id);await loadFields()});
   box.querySelectorAll('.field-sort-row').forEach(row=>{
     row.ondragstart=e=>{draggedFieldId=row.dataset.id;row.classList.add('dragging');e.dataTransfer.effectAllowed='move'};
-    row.ondragend=()=>{row.classList.remove('dragging');draggedFieldId=null;box.querySelectorAll('.field-sort-row').forEach(x=>x.classList.remove('drag-over'))};
-    row.ondragover=e=>{e.preventDefault();if(row.dataset.id!==draggedFieldId)row.classList.add('drag-over')};
-    row.ondragleave=()=>row.classList.remove('drag-over');
-    row.ondrop=async e=>{
-      e.preventDefault();row.classList.remove('drag-over');
-      if(!draggedFieldId||draggedFieldId===row.dataset.id)return;
-      const from=fields.findIndex(x=>x.id===draggedFieldId),to=fields.findIndex(x=>x.id===row.dataset.id);
-      if(from<0||to<0)return;
-      const next=[...fields],moved=next.splice(from,1)[0];next.splice(to,0,moved);fields=next;renderFields();await saveFieldOrder();
-    };
+    row.ondragend=()=>{row.classList.remove('dragging');draggedFieldId=null};
+    row.ondragover=e=>e.preventDefault();
+    row.ondrop=async e=>{e.preventDefault();if(!draggedFieldId||draggedFieldId===row.dataset.id)return;const from=fields.findIndex(x=>x.id===draggedFieldId),to=fields.findIndex(x=>x.id===row.dataset.id);const next=[...fields],m=next.splice(from,1)[0];next.splice(to,0,m);fields=next;renderFields();await saveFieldOrder()}
   });
 }
 async function saveFieldOrder(){
-  const note=document.getElementById('fieldNote');dragSaving=true;showMessage(note,'正在保存排序…');
-  try{
-    for(let i=0;i<fields.length;i++)await base44.entities.FormField.update(fields[i].id,{order:i+1});
-    fields=fields.map((f,i)=>({...f,order:i+1}));
-    renderFields();showMessage(note,'排序已保存，业务员登记页面会按这个顺序显示。','ok');
-  }catch(err){showMessage(note,'保存排序失败：'+(err?.message||String(err)),'err');await loadFields()}
-  finally{dragSaving=false}
+  const note=document.getElementById('fieldNote');dragSaving=true;
+  try{for(let i=0;i<fields.length;i++)await base44.entities.FormField.update(fields[i].id,{order:i+1});fields=fields.map((f,i)=>({...f,order:i+1}));renderFields();showMessage(note,'排序已保存。','ok')}
+  catch(err){showMessage(note,'保存排序失败：'+(err?.message||String(err)),'err');await loadFields()}finally{dragSaving=false}
 }
 document.getElementById('addField').onclick=async()=>{
   const label=document.getElementById('fieldLabel').value.trim(),type=document.getElementById('fieldType').value,options=document.getElementById('fieldOptions').value.trim(),required=document.getElementById('fieldRequired').value==='true',note=document.getElementById('fieldNote');
@@ -240,63 +226,88 @@ document.getElementById('addField').onclick=async()=>{
   try{
     const nextOrder=fields.length?Math.max(...fields.map(f=>Number(f.order)||0))+1:1;
     await base44.entities.FormField.create({label,field_key:'f_'+Date.now(),field_type:type,options,required,order:nextOrder,active:true});
-    showMessage(note,'字段已添加，已排在最后。可直接拖拽调整顺序。','ok');
-    document.getElementById('fieldLabel').value='';document.getElementById('fieldOptions').value='';await loadFields()
+    showMessage(note,'字段已添加。','ok');document.getElementById('fieldLabel').value='';document.getElementById('fieldOptions').value='';await loadFields()
   }catch(err){showMessage(note,'添加失败：'+(err?.message||'未知错误'),'err')}
 };
+
+async function loadProgress(){
+  try{
+    progressStages=unwrap(await base44.entities.ProgressStage.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
+    document.getElementById('sidebarProgressCount').textContent=progressStages.length;renderProgress();
+  }catch(err){document.getElementById('progressList').innerHTML='<div class="notice err">读取客户进度失败：'+esc(err?.message||String(err))+'</div>'}
+}
+function renderProgress(){
+  const box=document.getElementById('progressList');
+  if(!progressStages.length){box.innerHTML='<div class="empty">还没有客户进度，先添加一个。</div>';return}
+  box.innerHTML='<div class="field-sort-list">'+progressStages.map((p,i)=>'<div class="field-sort-row progress-sort-row" draggable="true" data-id="'+p.id+'"><div class="drag-handle">☰</div><div class="field-sort-name"><input class="progress-name-input" data-id="'+p.id+'" value="'+esc(p.label)+'"><span>第 '+(i+1)+' 步</span></div><div class="field-sort-order">'+(i+1)+'</div><div class="row"><button class="btn soft save-progress" data-id="'+p.id+'">保存名称</button><button class="btn danger delete-progress" data-id="'+p.id+'">删除</button></div></div>').join('')+'</div>';
+  box.querySelectorAll('.save-progress').forEach(b=>b.onclick=async()=>{const input=box.querySelector('.progress-name-input[data-id="'+b.dataset.id+'"]');const label=input.value.trim();if(!label)return;await base44.entities.ProgressStage.update(b.dataset.id,{label});await loadProgress()});
+  box.querySelectorAll('.delete-progress').forEach(b=>b.onclick=async()=>{if(!confirm('删除这个客户进度？已有客户的历史勾选不会再显示这个步骤。'))return;await base44.entities.ProgressStage.delete(b.dataset.id);await loadProgress()});
+  box.querySelectorAll('.progress-sort-row').forEach(row=>{
+    row.ondragstart=e=>{draggedProgressId=row.dataset.id;row.classList.add('dragging');e.dataTransfer.effectAllowed='move'};
+    row.ondragend=()=>{row.classList.remove('dragging');draggedProgressId=null};
+    row.ondragover=e=>e.preventDefault();
+    row.ondrop=async e=>{e.preventDefault();if(!draggedProgressId||draggedProgressId===row.dataset.id)return;const from=progressStages.findIndex(x=>x.id===draggedProgressId),to=progressStages.findIndex(x=>x.id===row.dataset.id);const next=[...progressStages],m=next.splice(from,1)[0];next.splice(to,0,m);progressStages=next;renderProgress();await saveProgressOrder()}
+  });
+}
+async function saveProgressOrder(){
+  const note=document.getElementById('progressNote');progressDragSaving=true;
+  try{for(let i=0;i<progressStages.length;i++)await base44.entities.ProgressStage.update(progressStages[i].id,{order:i+1});progressStages=progressStages.map((p,i)=>({...p,order:i+1}));renderProgress();showMessage(note,'进度顺序已保存。','ok')}
+  catch(err){showMessage(note,'保存排序失败：'+(err?.message||String(err)),'err');await loadProgress()}finally{progressDragSaving=false}
+}
+document.getElementById('addProgress').onclick=async()=>{
+  const label=document.getElementById('progressLabel').value.trim(),note=document.getElementById('progressNote');if(!label){showMessage(note,'请输入进度名称。','err');return}
+  try{const nextOrder=progressStages.length?Math.max(...progressStages.map(p=>Number(p.order)||0))+1:1;await base44.entities.ProgressStage.create({label,order:nextOrder,active:true});document.getElementById('progressLabel').value='';showMessage(note,'进度已添加。','ok');await loadProgress()}
+  catch(err){showMessage(note,'添加失败：'+(err?.message||String(err)),'err')}
+};
+
+function progressBar(row){
+  if(!progressStages.length)return '<span class="small">未设置进度</span>';
+  const done=new Set((row.completed_progress_ids||[]).map(String));
+  return '<div class="mini-progress">'+progressStages.map((p,i)=>'<span class="mini-progress-step '+(done.has(String(p.id))?'done':'')+'" title="'+esc(p.label)+'"><i></i><b>'+esc(p.label)+'</b></span>').join('')+'</div>';
+}
+function previewCard(row){
+  const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
+  return '<div class="customer-preview"><div class="preview-title">客户完整信息</div><div class="preview-grid"><div><span>业务员</span><b>'+esc(row.rep_username||'')+'</b></div><div><span>登记时间</span><b>'+esc(formatDate(row.created_date))+'</b></div>'+active.map(f=>'<div><span>'+esc(f.label)+'</span><b>'+esc(row.data?.[f.field_key]||'—')+'</b></div>').join('')+'</div><div class="preview-progress-title">客户进度</div>'+progressBar(row)+'</div>';
+}
 
 async function loadCustomers(){
   try{
     customers=unwrap(await base44.entities.Customer.list({sort:'-created_date',limit:1000}));
-    document.getElementById('totalCustomers').textContent=customers.length;
-    document.getElementById('allCustomerCount').textContent=customers.length;
+    document.getElementById('totalCustomers').textContent=customers.length;document.getElementById('allCustomerCount').textContent=customers.length;
     renderCustomers();renderSidebar();renderReps();
   }catch(err){document.getElementById('customerList').innerHTML='<div class="notice err">读取客户失败：'+esc(err?.message||String(err))+'</div>'}
 }
 function getVisibleCustomers(){
   const q=document.getElementById('customerSearch').value.trim().toLowerCase();
-  return customers.filter(r=>{
-    if(currentView==='rep'&&String(r.rep_username||'')!==String(currentRepFilter||''))return false;
-    return (String(r.rep_username||'')+' '+JSON.stringify(r.data||{})).toLowerCase().includes(q);
-  });
+  return customers.filter(r=>{if(currentView==='rep'&&String(r.rep_username||'')!==String(currentRepFilter||''))return false;return (String(r.rep_username||'')+' '+JSON.stringify(r.data||{})).toLowerCase().includes(q)})
 }
 function renderCustomers(){
-  const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
-  const rows=getVisibleCustomers();
-  const box=document.getElementById('customerList');
+  const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0)),rows=getVisibleCustomers(),box=document.getElementById('customerList');
   if(!rows.length){box.innerHTML='<div class="empty">暂无匹配客户</div>';return}
-  box.innerHTML='<div class="table-wrap"><table><thead><tr><th>业务员用户名</th><th>登记时间</th>'+active.map(f=>'<th>'+esc(f.label)+'</th>').join('')+'<th>操作</th></tr></thead><tbody>'+rows.map(r=>'<tr><td><b>'+esc(r.rep_username||'')+'</b></td><td>'+esc(formatDate(r.created_date))+'</td>'+active.map(f=>'<td>'+esc(r.data?.[f.field_key]||'')+'</td>').join('')+'<td><div class="row nowrap"><button class="btn soft editcustomer" data-id="'+r.id+'">编辑</button><button class="btn danger delcustomer" data-id="'+r.id+'">删除</button></div></td></tr>').join('')+'</tbody></table></div>';
+  box.innerHTML='<div class="table-wrap customer-table"><table><thead><tr><th>业务员用户名</th><th>登记时间</th>'+active.map(f=>'<th>'+esc(f.label)+'</th>').join('')+'<th>进度</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>'<tr><td><b>'+esc(r.rep_username||'')+'</b></td><td>'+esc(formatDate(r.created_date))+'</td>'+active.map(f=>'<td>'+esc(r.data?.[f.field_key]||'')+'</td>').join('')+'<td class="progress-cell">'+progressBar(r)+'</td><td><div class="row nowrap"><span class="preview-wrap"><button class="eye-btn" type="button" aria-label="预览">◉</button>'+previewCard(r)+'</span><button class="btn soft editcustomer" data-id="'+r.id+'">编辑</button><button class="btn danger delcustomer" data-id="'+r.id+'">删除</button></div></td></tr>').join('')+'</tbody></table></div>';
   box.querySelectorAll('.editcustomer').forEach(b=>b.onclick=()=>openCustomerEditor(customers.find(x=>x.id===b.dataset.id)));
-  box.querySelectorAll('.delcustomer').forEach(b=>b.onclick=async()=>{const row=customers.find(x=>x.id===b.dataset.id);if(!row||!confirm('确定删除这条客户记录吗？'))return;try{await base44.entities.Customer.delete(row.id);await loadCustomers()}catch(err){alert('删除失败：'+(err?.message||String(err)))}})
+  box.querySelectorAll('.delcustomer').forEach(b=>b.onclick=async()=>{const row=customers.find(x=>x.id===b.dataset.id);if(!row||!confirm('确定删除这条客户记录吗？'))return;await base44.entities.Customer.delete(row.id);await loadCustomers()})
 }
 function openCustomerEditor(row){
   if(!row)return;editingCustomerId=row.id;
   const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
-  const options=['<option value="">未指定</option>',...reps.map(r=>'<option value="'+esc(r.username)+'" '+(String(row.rep_username||'')===String(r.username||'')?'selected':'')+'>'+esc(r.display_name||r.username)+' ('+esc(r.username)+')</option>')];
-  document.getElementById('editRep').innerHTML=options.join('');
+  document.getElementById('editRep').innerHTML=['<option value="">未指定</option>',...reps.map(r=>'<option value="'+esc(r.username)+'" '+(String(row.rep_username||'')===String(r.username||'')?'selected':'')+'>'+esc(r.display_name||r.username)+' ('+esc(r.username)+')</option>')].join('');
   document.getElementById('customerEditFields').innerHTML=active.map(f=>buildFieldControl(f,row.data?.[f.field_key]??'')).join('');
   customerEditNote.hidden=true;customerModal.hidden=false;
 }
 customerEditForm.onsubmit=async e=>{
   e.preventDefault();const row=customers.find(x=>x.id===editingCustomerId);if(!row)return;
   const data={...(row.data||{})};customerEditForm.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
-  try{
-    await base44.entities.Customer.update(row.id,{rep_username:document.getElementById('editRep').value,data});
-    showMessage(customerEditNote,'客户资料已更新。','ok');await loadCustomers();setTimeout(()=>customerModal.hidden=true,350)
-  }catch(err){showMessage(customerEditNote,'保存失败：'+(err?.message||String(err)),'err')}
+  try{await base44.entities.Customer.update(row.id,{rep_username:document.getElementById('editRep').value,data});showMessage(customerEditNote,'客户资料已更新。','ok');await loadCustomers();setTimeout(()=>customerModal.hidden=true,350)}
+  catch(err){showMessage(customerEditNote,'保存失败：'+(err?.message||String(err)),'err')}
 };
 
 document.getElementById('exportBtn').onclick=()=>{
-  const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
-  const rows=getVisibleCustomers();
-  downloadCsv(currentView==='rep'?(currentRepFilter+'_客户数据.csv'):'客户登记数据.csv',[['业务员用户名','登记时间',...active.map(f=>f.label)],...rows.map(r=>[r.rep_username||'',formatDate(r.created_date),...active.map(f=>r.data?.[f.field_key]||'')])])
+  const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0)),rows=getVisibleCustomers();
+  downloadCsv(currentView==='rep'?(currentRepFilter+'_客户数据.csv'):'客户登记数据.csv',[['业务员用户名','登记时间',...active.map(f=>f.label),'已完成进度'],...rows.map(r=>[r.rep_username||'',formatDate(r.created_date),...active.map(f=>r.data?.[f.field_key]||''),(r.completed_progress_ids||[]).map(id=>progressStages.find(p=>String(p.id)===String(id))?.label||'').filter(Boolean).join(' / ')])])
 };
-document.getElementById('customerSearch').oninput=renderCustomers;
-document.getElementById('refreshCustomers').onclick=loadCustomers;
-document.getElementById('refreshReps').onclick=loadReps;
-document.getElementById('closeCustomerModal').onclick=()=>customerModal.hidden=true;
-document.getElementById('cancelCustomerEdit').onclick=()=>customerModal.hidden=true;
-customerModal.onclick=e=>{if(e.target===customerModal)customerModal.hidden=true};
+document.getElementById('customerSearch').oninput=renderCustomers;document.getElementById('refreshCustomers').onclick=loadCustomers;document.getElementById('refreshReps').onclick=loadReps;
+document.getElementById('closeCustomerModal').onclick=()=>customerModal.hidden=true;document.getElementById('cancelCustomerEdit').onclick=()=>customerModal.hidden=true;customerModal.onclick=e=>{if(e.target===customerModal)customerModal.hidden=true};
 document.getElementById('logoutBtn').onclick=()=>{localStorage.removeItem('m717_admin');location.reload()};
 if(localStorage.getItem('m717_admin')==='1')enter();
 </script></body></html>
