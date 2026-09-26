@@ -2,18 +2,67 @@
 <div class="topbar"><div><div class="brand">客户登记系统</div><div id="who" class="subbrand"></div></div><div class="row"><button id="newBtn" class="btn primary">＋ 登记客户</button><button id="logoutBtn" class="btn soft">退出</button></div></div>
 <div class="shell"><div class="stats"><div class="stat"><div id="myCount" class="n">0</div><div class="l">我的客户</div></div><div class="stat"><div id="fieldCount" class="n">0</div><div class="l">当前登记项目</div></div><div class="stat"><div id="todayCount" class="n">0</div><div class="l">今日新增</div></div></div>
 <div class="card"><div class="row"><div><h2 style="margin:0">我的客户</h2><div class="small">当前业务员：<b id="repLabel"></b></div></div><div class="spacer"></div><input id="search" class="search" placeholder="搜索客户信息…"></div><div id="customerList" style="margin-top:16px"></div></div></div>
-<div id="modal" class="modal" hidden><div class="modal-card"><div class="row"><h2 id="modalTitle" style="margin:0">登记客户</h2><div class="spacer"></div><button id="closeModal" class="btn soft">关闭</button></div><form id="customerForm"><div id="dynamicFields" class="grid" style="margin-top:18px"></div><div class="row" style="margin-top:18px"><button class="btn primary" type="submit">保存客户</button><button id="cancelEdit" class="btn soft" type="button">取消</button></div></form><div id="formNote" class="notice" hidden></div></div></div>
+
+<div id="modal" class="modal" hidden><div class="modal-card"><div class="row"><h2 id="modalTitle" style="margin:0">登记客户</h2><div class="spacer"></div><button id="closeModal" class="btn soft">关闭</button></div>
+<form id="customerForm">
+  <div id="dynamicFields" class="grid" style="margin-top:18px"></div>
+  <div class="progress-editor">
+    <div class="section-title" style="margin:0 0 10px"><div class="dot"></div><h3 style="margin:0">客户进度</h3><div class="spacer"></div><span class="small">点击步骤打勾/取消</span></div>
+    <div id="progressChecklist" class="progress-checklist"></div>
+  </div>
+  <div class="row" style="margin-top:18px"><button class="btn primary" type="submit">保存客户</button><button id="cancelEdit" class="btn soft" type="button">取消</button></div>
+</form><div id="formNote" class="notice" hidden></div></div></div>
+
 <script type="module">
 import { base44, esc, showMessage, buildFieldControl, formatDate } from './base44.js';
-let username=localStorage.getItem('m717_rep_username')||'',displayName=localStorage.getItem('m717_rep_display_name')||'',fields=[],customers=[],editingId=null;
+let username=localStorage.getItem('m717_rep_username')||'',displayName=localStorage.getItem('m717_rep_display_name')||'',fields=[],customers=[],progressStages=[],editingId=null;
 const modal=document.getElementById('modal'),form=document.getElementById('customerForm'),note=document.getElementById('formNote'),list=document.getElementById('customerList');
-async function boot(){if(!username){location.href='./login.html';return}try{const reps=await base44.entities.SalesRep.list('-created_date',500);const rep=reps.find(r=>String(r.username||'').toLowerCase()===username.toLowerCase());if(!rep){localStorage.removeItem('m717_rep_username');location.href='./login.html';return}displayName=rep.display_name||rep.username;document.getElementById('who').textContent=displayName;document.getElementById('repLabel').textContent=username;await Promise.all([loadFields(),loadCustomers()]);try{base44.entities.FormField.subscribe(()=>loadFields());base44.entities.Customer.subscribe(()=>loadCustomers());base44.entities.SalesRep.subscribe(()=>verifyRep())}catch(_){}}catch(_){location.href='./login.html'}}
-async function verifyRep(){const reps=await base44.entities.SalesRep.list('-created_date',500);if(!reps.some(r=>String(r.username||'').toLowerCase()===username.toLowerCase())){localStorage.removeItem('m717_rep_username');location.href='./login.html'}}
-async function loadFields(){fields=(await base44.entities.FormField.list('-order',500)).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));document.getElementById('fieldCount').textContent=fields.length;renderForm()}
-async function loadCustomers(){const all=await base44.entities.Customer.list('-created_date',1000);customers=all.filter(r=>String(r.rep_username||'').toLowerCase()===username.toLowerCase());renderCustomers();document.getElementById('myCount').textContent=customers.length;const today=new Date().toISOString().slice(0,10);document.getElementById('todayCount').textContent=customers.filter(x=>String(x.created_date||'').slice(0,10)===today).length}
+function unwrap(v){return Array.isArray(v)?v:(v?.items||[])}
+async function boot(){
+  if(!username){location.href='./login.html';return}
+  try{
+    const reps=unwrap(await base44.entities.SalesRep.list({sort:'-created_date',limit:500}));const rep=reps.find(r=>String(r.username||'').toLowerCase()===username.toLowerCase());
+    if(!rep){localStorage.removeItem('m717_rep_username');location.href='./login.html';return}
+    displayName=rep.display_name||rep.username;document.getElementById('who').textContent=displayName;document.getElementById('repLabel').textContent=username;
+    await Promise.all([loadFields(),loadProgress(),loadCustomers()]);
+    try{base44.entities.FormField.subscribe(()=>loadFields());base44.entities.ProgressStage.subscribe(()=>{loadProgress();loadCustomers()});base44.entities.Customer.subscribe(()=>loadCustomers());base44.entities.SalesRep.subscribe(()=>verifyRep())}catch(_){}
+  }catch(_){location.href='./login.html'}
+}
+async function verifyRep(){const reps=unwrap(await base44.entities.SalesRep.list({sort:'-created_date',limit:500}));if(!reps.some(r=>String(r.username||'').toLowerCase()===username.toLowerCase())){localStorage.removeItem('m717_rep_username');location.href='./login.html'}}
+async function loadFields(){fields=unwrap(await base44.entities.FormField.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));document.getElementById('fieldCount').textContent=fields.length;renderForm()}
+async function loadProgress(){progressStages=unwrap(await base44.entities.ProgressStage.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));renderProgressChecklist()}
+async function loadCustomers(){const all=unwrap(await base44.entities.Customer.list({sort:'-created_date',limit:1000}));customers=all.filter(r=>String(r.rep_username||'').toLowerCase()===username.toLowerCase());renderCustomers();document.getElementById('myCount').textContent=customers.length;const today=new Date().toISOString().slice(0,10);document.getElementById('todayCount').textContent=customers.filter(x=>String(x.created_date||'').slice(0,10)===today).length}
 function renderForm(data={}){document.getElementById('dynamicFields').innerHTML=fields.map(f=>buildFieldControl(f,data[f.field_key]??'')).join('')}
-function openForm(row=null){editingId=row?.id||null;document.getElementById('modalTitle').textContent=editingId?'编辑客户':'登记客户';renderForm(row?.data||{});note.hidden=true;modal.hidden=false}
-function renderCustomers(){const q=document.getElementById('search').value.trim().toLowerCase();const rows=customers.filter(r=>JSON.stringify(r.data||{}).toLowerCase().includes(q));if(!rows.length){list.innerHTML='<div class="empty">暂无客户记录</div>';return}list.innerHTML='<div class="table-wrap"><table><thead><tr><th>登记时间</th>'+fields.map(f=>'<th>'+esc(f.label)+'</th>').join('')+'<th>操作</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+esc(formatDate(r.created_date))+'</td>'+fields.map(f=>'<td>'+esc(r.data?.[f.field_key]||'')+'</td>').join('')+'<td><div class="row"><button class="btn soft edit" data-id="'+r.id+'">编辑</button><button class="btn danger del" data-id="'+r.id+'">删除</button></div></td></tr>').join('')+'</tbody></table></div>';list.querySelectorAll('.edit').forEach(b=>b.onclick=()=>openForm(customers.find(x=>x.id===b.dataset.id)));list.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{if(!confirm('确定删除这条客户记录吗？'))return;await base44.entities.Customer.delete(b.dataset.id);await loadCustomers()})}
-form.onsubmit=async e=>{e.preventDefault();const data={};form.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);try{if(editingId)await base44.entities.Customer.update(editingId,{rep_username:username,data});else await base44.entities.Customer.create({rep_username:username,data});showMessage(note,'已保存并同步。','ok');await loadCustomers();setTimeout(()=>modal.hidden=true,400)}catch(err){showMessage(note,'保存失败：'+(err?.message||'未知错误'),'err')}};
+function renderProgressChecklist(completed=[]){
+  const done=new Set((completed||[]).map(String)),box=document.getElementById('progressChecklist');
+  if(!progressStages.length){box.innerHTML='<div class="small">管理员还没有设置客户进度。</div>';return}
+  box.innerHTML=progressStages.map((p,i)=>'<label class="progress-check '+(done.has(String(p.id))?'checked':'')+'"><input type="checkbox" data-progress-id="'+p.id+'" '+(done.has(String(p.id))?'checked':'')+'><span class="progress-check-index">'+(i+1)+'</span><span class="progress-check-label">'+esc(p.label)+'</span><span class="progress-check-mark">✓</span></label>').join('');
+  box.querySelectorAll('input[type="checkbox"]').forEach(cb=>cb.onchange=()=>cb.closest('.progress-check').classList.toggle('checked',cb.checked))
+}
+function openForm(row=null){editingId=row?.id||null;document.getElementById('modalTitle').textContent=editingId?'编辑客户':'登记客户';renderForm(row?.data||{});renderProgressChecklist(row?.completed_progress_ids||[]);note.hidden=true;modal.hidden=false}
+function progressBar(row){
+  if(!progressStages.length)return '<span class="small">未设置进度</span>';
+  const done=new Set((row.completed_progress_ids||[]).map(String));
+  return '<div class="mini-progress">'+progressStages.map(p=>'<span class="mini-progress-step '+(done.has(String(p.id))?'done':'')+'" title="'+esc(p.label)+'"><i></i><b>'+esc(p.label)+'</b></span>').join('')+'</div>';
+}
+function previewCard(row){
+  return '<div class="customer-preview"><div class="preview-title">客户完整信息</div><div class="preview-grid"><div><span>登记时间</span><b>'+esc(formatDate(row.created_date))+'</b></div>'+fields.map(f=>'<div><span>'+esc(f.label)+'</span><b>'+esc(row.data?.[f.field_key]||'—')+'</b></div>').join('')+'</div><div class="preview-progress-title">客户进度</div>'+progressBar(row)+'</div>';
+}
+function renderCustomers(){
+  const q=document.getElementById('search').value.trim().toLowerCase(),rows=customers.filter(r=>JSON.stringify(r.data||{}).toLowerCase().includes(q));
+  if(!rows.length){list.innerHTML='<div class="empty">暂无客户记录</div>';return}
+  list.innerHTML='<div class="table-wrap customer-table"><table><thead><tr><th>登记时间</th>'+fields.map(f=>'<th>'+esc(f.label)+'</th>').join('')+'<th>进度</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+esc(formatDate(r.created_date))+'</td>'+fields.map(f=>'<td>'+esc(r.data?.[f.field_key]||'')+'</td>').join('')+'<td class="progress-cell">'+progressBar(r)+'</td><td><div class="row nowrap"><span class="preview-wrap"><button class="eye-btn" type="button" aria-label="预览">◉</button>'+previewCard(r)+'</span><button class="btn soft edit" data-id="'+r.id+'">编辑</button><button class="btn danger del" data-id="'+r.id+'">删除</button></div></td></tr>').join('')+'</tbody></table></div>';
+  list.querySelectorAll('.edit').forEach(b=>b.onclick=()=>openForm(customers.find(x=>x.id===b.dataset.id)));
+  list.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{if(!confirm('确定删除这条客户记录吗？'))return;await base44.entities.Customer.delete(b.dataset.id);await loadCustomers()})
+}
+form.onsubmit=async e=>{
+  e.preventDefault();const data={};form.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
+  const completed_progress_ids=[...document.querySelectorAll('#progressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
+  try{
+    if(editingId)await base44.entities.Customer.update(editingId,{rep_username:username,data,completed_progress_ids});
+    else await base44.entities.Customer.create({rep_username:username,data,completed_progress_ids});
+    showMessage(note,'已保存并同步。','ok');await loadCustomers();setTimeout(()=>modal.hidden=true,400)
+  }catch(err){showMessage(note,'保存失败：'+(err?.message||'未知错误'),'err')}
+};
 document.getElementById('newBtn').onclick=()=>openForm();document.getElementById('closeModal').onclick=()=>modal.hidden=true;document.getElementById('cancelEdit').onclick=()=>modal.hidden=true;document.getElementById('search').oninput=renderCustomers;document.getElementById('logoutBtn').onclick=()=>{localStorage.removeItem('m717_rep_username');localStorage.removeItem('m717_rep_display_name');location.href='./login.html'};modal.onclick=e=>{if(e.target===modal)modal.hidden=true};boot();
 </script></body></html>
