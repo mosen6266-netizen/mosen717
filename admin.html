@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-18"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-20"></head><body>
 <div id="loginView" class="login-wrap"><div class="login-box"><div class="pill">管理员入口</div><h1 style="margin-top:12px">登录管理后台</h1><div class="muted">请输入管理员密码。</div><div class="field" style="margin-top:20px"><label>管理员密码</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button id="adminLogin" class="btn primary" style="width:100%;margin-top:18px">登录</button><div id="loginNote" class="notice" hidden></div></div></div>
 
 <div id="appView" hidden>
@@ -66,7 +66,7 @@
           <div class="section-title"><div class="dot"></div><h2>登记字段管理</h2><div class="spacer"></div><span class="pill">拖拽排序 · 业务员自动同步</span></div>
           <div class="grid3">
             <div class="field"><label>字段名称</label><input id="fieldLabel" placeholder="例如 客户生日"></div>
-            <div class="field"><label>字段类型</label><select id="fieldType"><option value="text">文本</option><option value="number">数字</option><option value="date">日期</option><option value="email">邮箱</option><option value="tel">电话</option><option value="textarea">长文本</option><option value="select">下拉选项</option></select></div>
+            <div class="field"><label>字段类型</label><select id="fieldType"><option value="text">文本</option><option value="number">数字</option><option value="date">日期</option><option value="datetime">日期时间</option><option value="email">邮箱</option><option value="tel">电话</option><option value="textarea">长文本</option><option value="select">下拉选项</option></select></div>
             <div class="field"><label>下拉选项（逗号分隔）</label><input id="fieldOptions" placeholder="例如 高,中,低"></div>
             <div class="field"><label>是否必填</label><select id="fieldRequired"><option value="false">非必填</option><option value="true">必填</option></select></div>
           </div>
@@ -135,10 +135,43 @@
   </div>
 </div>
 
+
+<div id="fieldTypeModal" class="modal" hidden>
+  <div class="modal-card" style="max-width:520px">
+    <div class="row"><h2 style="margin:0">更改字段类型</h2><div class="spacer"></div><button id="closeFieldTypeModal" class="btn soft" type="button">关闭</button></div>
+    <div class="field" style="margin-top:18px">
+      <label>字段名称</label>
+      <input id="fieldTypeFieldName" disabled>
+    </div>
+    <div class="field" style="margin-top:14px">
+      <label>字段类型</label>
+      <select id="changeFieldType">
+        <option value="text">文本</option>
+        <option value="number">数字</option>
+        <option value="date">日期</option>
+        <option value="datetime">日期时间</option>
+        <option value="email">邮箱</option>
+        <option value="tel">电话</option>
+        <option value="textarea">长文本</option>
+        <option value="select">下拉选项</option>
+      </select>
+    </div>
+    <div id="changeFieldOptionsWrap" class="field" style="margin-top:14px" hidden>
+      <label>下拉选项（逗号分隔）</label>
+      <input id="changeFieldOptions" placeholder="例如 高,中,低">
+    </div>
+    <div class="row" style="margin-top:18px">
+      <button id="saveFieldType" class="btn primary" type="button">保存类型</button>
+      <button id="cancelFieldType" class="btn soft" type="button">取消</button>
+    </div>
+    <div id="fieldTypeNote" class="notice" hidden></div>
+  </div>
+</div>
+
 <script type="module">
 import { base44, esc, showMessage, buildFieldControl, formatDate, downloadCsv } from './base44.js';
 const ADMIN_HASH='78fd5f1e5a3f6eef05ab8d692942fd0ff4a8f4cc0e6087026626006a7fae452d';
-let reps=[],fields=[],customers=[],progressStages=[],editingCustomerId=null,draggedFieldId=null,dragSaving=false,draggedProgressId=null,progressDragSaving=false;
+let reps=[],fields=[],customers=[],progressStages=[],editingCustomerId=null,draggedFieldId=null,dragSaving=false,draggedProgressId=null,progressDragSaving=false,editingFieldTypeId=null;
 let currentView='all',currentRepFilter='';
 
 const loginView=document.getElementById('loginView'),appView=document.getElementById('appView'),loginNote=document.getElementById('loginNote');
@@ -245,10 +278,14 @@ async function loadFields(){
     renderFields();
   }catch(err){document.getElementById('fieldList').innerHTML='<div class="notice err">读取登记字段失败：'+esc(err?.message||String(err))+'</div>'}
 }
+function fieldTypeLabel(type){
+  return ({text:'文本',number:'数字',date:'日期',datetime:'日期时间',email:'邮箱',tel:'电话',textarea:'长文本',select:'下拉选项'})[type]||type||'文本';
+}
 function renderFields(){
   const box=document.getElementById('fieldList');
   if(!fields.length){box.innerHTML='<div class="empty">暂无登记项目</div>';return}
-  box.innerHTML='<div class="field-sort-list">'+fields.map((f,i)=>'<div class="field-sort-row" draggable="true" data-id="'+f.id+'"><div class="drag-handle">☰</div><div class="field-sort-name"><b>'+esc(f.label)+'</b><span>'+esc(f.field_type)+(f.required?' · 必填':'')+'</span></div><div class="field-sort-order">第 '+(i+1)+' 项</div><div class="row"><button class="btn soft toggle" data-id="'+f.id+'" data-active="'+(f.active!==false)+'">'+(f.active===false?'启用':'停用')+'</button><button class="btn danger remove" data-id="'+f.id+'">删除</button></div></div>').join('')+'</div>';
+  box.innerHTML='<div class="field-sort-list">'+fields.map((f,i)=>'<div class="field-sort-row" draggable="true" data-id="'+f.id+'"><div class="drag-handle">☰</div><div class="field-sort-name"><b>'+esc(f.label)+'</b><span>'+esc(fieldTypeLabel(f.field_type))+(f.required?' · 必填':'')+'</span></div><div class="field-sort-order">第 '+(i+1)+' 项</div><div class="row"><button class="btn soft change-type" data-id="'+f.id+'">更改类型</button><button class="btn soft toggle" data-id="'+f.id+'" data-active="'+(f.active!==false)+'">'+(f.active===false?'启用':'停用')+'</button><button class="btn danger remove" data-id="'+f.id+'">删除</button></div></div>').join('')+'</div>';
+  box.querySelectorAll('.change-type').forEach(b=>b.onclick=e=>{e.stopPropagation();openFieldTypeModal(b.dataset.id)});
   box.querySelectorAll('.toggle').forEach(b=>b.onclick=async e=>{e.stopPropagation();await base44.entities.FormField.update(b.dataset.id,{active:b.dataset.active!=='true'});await loadFields()});
   box.querySelectorAll('.remove').forEach(b=>b.onclick=async e=>{e.stopPropagation();if(!confirm('确定删除这个登记字段吗？'))return;await base44.entities.FormField.delete(b.dataset.id);await loadFields()});
   box.querySelectorAll('.field-sort-row').forEach(row=>{
@@ -258,6 +295,38 @@ function renderFields(){
     row.ondrop=async e=>{e.preventDefault();if(!draggedFieldId||draggedFieldId===row.dataset.id)return;const from=fields.findIndex(x=>x.id===draggedFieldId),to=fields.findIndex(x=>x.id===row.dataset.id);const next=[...fields],m=next.splice(from,1)[0];next.splice(to,0,m);fields=next;renderFields();await saveFieldOrder()}
   });
 }
+function openFieldTypeModal(id){
+  const field=fields.find(x=>String(x.id)===String(id));if(!field)return;
+  editingFieldTypeId=field.id;
+  document.getElementById('fieldTypeFieldName').value=field.label||'';
+  document.getElementById('changeFieldType').value=field.field_type||'text';
+  document.getElementById('changeFieldOptions').value=field.options||'';
+  document.getElementById('changeFieldOptionsWrap').hidden=(field.field_type!=='select');
+  document.getElementById('fieldTypeNote').hidden=true;
+  document.getElementById('fieldTypeModal').hidden=false;
+}
+function closeFieldTypeModal(){
+  editingFieldTypeId=null;
+  document.getElementById('fieldTypeModal').hidden=true;
+}
+document.getElementById('changeFieldType').onchange=e=>{
+  document.getElementById('changeFieldOptionsWrap').hidden=(e.target.value!=='select');
+};
+document.getElementById('closeFieldTypeModal').onclick=closeFieldTypeModal;
+document.getElementById('cancelFieldType').onclick=closeFieldTypeModal;
+document.getElementById('fieldTypeModal').onclick=e=>{if(e.target.id==='fieldTypeModal')closeFieldTypeModal()};
+document.getElementById('saveFieldType').onclick=async()=>{
+  const note=document.getElementById('fieldTypeNote'),type=document.getElementById('changeFieldType').value,options=document.getElementById('changeFieldOptions').value.trim();
+  if(!editingFieldTypeId)return;
+  if(type==='select'&&!options){showMessage(note,'下拉选项不能为空。','err');return}
+  try{
+    await base44.entities.FormField.update(editingFieldTypeId,{field_type:type,options:type==='select'?options:''});
+    showMessage(note,'字段类型已更新。','ok');
+    await loadFields();
+    setTimeout(closeFieldTypeModal,250);
+  }catch(err){showMessage(note,'修改失败：'+(err?.message||String(err)),'err')}
+};
+
 async function saveFieldOrder(){
   const note=document.getElementById('fieldNote');dragSaving=true;
   try{for(let i=0;i<fields.length;i++)await base44.entities.FormField.update(fields[i].id,{order:i+1});fields=fields.map((f,i)=>({...f,order:i+1}));renderFields();showMessage(note,'排序已保存。','ok')}
