@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-21"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-22"></head><body>
 <div class="topbar"><div class="brand-lockup"><img class="brand-logo" src="./mosen-logo.svg?v=20260926-18" alt="墨森"><div><div class="brand">墨森维权客户登记系统</div><div id="who" class="subbrand"></div></div></div><div class="row"><button id="newBtn" class="btn primary">＋ 登记客户</button><button id="logoutBtn" class="btn soft">退出</button></div></div>
 <div class="shell"><div class="stats"><div class="stat"><div id="myCount" class="n">0</div><div class="l">我的客户</div></div><div class="stat"><div id="fieldCount" class="n">0</div><div class="l">当前登记项目</div></div><div class="stat"><div id="todayCount" class="n">0</div><div class="l">今日新增</div></div></div>
 <div class="card"><div class="row"><div><h2 style="margin:0">我的客户</h2><div class="small">当前业务员：<b id="repLabel"></b></div></div><div class="spacer"></div><input id="search" class="search" placeholder="搜索客户信息…"></div><div id="customerList" style="margin-top:16px"></div></div></div>
@@ -16,7 +16,7 @@
 </form><div id="formNote" class="notice" hidden></div></div></div>
 
 <script type="module">
-import { base44, esc, showMessage, buildFieldControl, formatDate } from './base44.js';
+import { base44, esc, showMessage, buildFieldControl, initDateTimeControls, formatDate } from './base44.js';
 let username=localStorage.getItem('m717_rep_username')||'',displayName=localStorage.getItem('m717_rep_display_name')||'',fields=[],customers=[],progressStages=[],editingId=null;
 const modal=document.getElementById('modal'),form=document.getElementById('customerForm'),note=document.getElementById('formNote'),list=document.getElementById('customerList');
 function unwrap(v){return Array.isArray(v)?v:(v?.items||[])}
@@ -34,7 +34,7 @@ async function verifyRep(){const reps=unwrap(await base44.entities.SalesRep.list
 async function loadFields(){fields=unwrap(await base44.entities.FormField.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));document.getElementById('fieldCount').textContent=fields.length;renderForm()}
 async function loadProgress(){progressStages=unwrap(await base44.entities.ProgressStage.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));renderProgressChecklist()}
 async function loadCustomers(){const all=unwrap(await base44.entities.Customer.list({sort:'-created_date',limit:1000}));customers=all.filter(r=>String(r.rep_username||'').toLowerCase()===username.toLowerCase());renderCustomers();document.getElementById('myCount').textContent=customers.length;const today=new Date().toISOString().slice(0,10);document.getElementById('todayCount').textContent=customers.filter(x=>String(x.created_date||'').slice(0,10)===today).length}
-function renderForm(data={}){document.getElementById('dynamicFields').innerHTML=fields.map(f=>buildFieldControl(f,data[f.field_key]??'')).join('')}
+function renderForm(data={}){const box=document.getElementById('dynamicFields');box.innerHTML=fields.map(f=>buildFieldControl(f,data[f.field_key]??'')).join('');initDateTimeControls(box)}
 function updateEditProgressSummary(){
   const total=progressStages.length;
   const checked=[...document.querySelectorAll('#progressChecklist input[type="checkbox"]:checked')].length;
@@ -110,7 +110,7 @@ function attachSalesPreviewEditor(portal,row){
       showMessage(note,'已保存并同步。','ok');
       await loadCustomers();
       const fresh=customers.find(x=>String(x.id)===String(row.id))||row;
-      portal.innerHTML=previewCard(fresh);portal.hidden=false;portal.dataset.pinned='1';attachSalesPreviewEditor(portal,fresh);
+      portal.innerHTML=previewCard(fresh);initDateTimeControls(portal);portal.hidden=false;portal.dataset.pinned='1';attachSalesPreviewEditor(portal,fresh);
       const newNote=portal.querySelector('[data-preview-note]');showMessage(newNote,'已保存并同步。','ok');
     }catch(err){showMessage(note,'保存失败：'+(err?.message||String(err)),'err');btn.disabled=false}
   });
@@ -122,7 +122,7 @@ function bindPreviewHover(container){
   portal.onmouseenter=keep;portal.onmouseleave=hideLater;
   container.querySelectorAll('.preview-wrap').forEach(w=>{
     const findRow=()=>customers.find(x=>String(x.id)===String(w.dataset.id));
-    const open=(pin=false)=>{keep();const row=findRow();if(!row)return;portal.innerHTML=previewCard(row);portal.hidden=false;portal.dataset.pinned=pin?'1':'0';attachSalesPreviewEditor(portal,row)};
+    const open=(pin=false)=>{keep();const row=findRow();if(!row)return;portal.innerHTML=previewCard(row);initDateTimeControls(portal);portal.hidden=false;portal.dataset.pinned=pin?'1':'0';attachSalesPreviewEditor(portal,row)};
     w.onmouseenter=()=>open(false);w.onmouseleave=hideLater;
     w.querySelector('.eye-btn')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();open(true)});
   });
