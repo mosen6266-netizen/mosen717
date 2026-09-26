@@ -2,60 +2,77 @@
 <div id="loginView" class="login-wrap"><div class="login-box"><div class="pill">管理员入口</div><h1 style="margin-top:12px">登录管理后台</h1><div class="muted">请输入管理员密码。</div><div class="field" style="margin-top:20px"><label>管理员密码</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button id="adminLogin" class="btn primary" style="width:100%;margin-top:18px">登录</button><div id="loginNote" class="notice" hidden></div></div></div>
 
 <div id="appView" hidden>
-  <div class="topbar"><div><div class="brand">客户登记系统 · 管理员</div><div class="subbrand">用户名模式</div></div><div class="row"><a href="./login.html" class="btn soft hide-mobile">业务员入口</a><button id="logoutBtn" class="btn soft">退出</button></div></div>
-  <div class="shell">
-    <div class="stats">
-      <div class="stat"><div id="totalCustomers" class="n">0</div><div class="l">全部客户</div></div>
-      <div class="stat"><div id="salesCount" class="n">0</div><div class="l">业务员用户名</div></div>
-      <div class="stat"><div id="activeFields" class="n">0</div><div class="l">启用登记项目</div></div>
-    </div>
+  <div class="topbar">
+    <div><div class="brand">客户登记系统 · 管理员</div><div class="subbrand">客户与业务员管理</div></div>
+    <div class="row"><a href="./login.html" class="btn soft hide-mobile">业务员入口</a><button id="logoutBtn" class="btn soft">退出</button></div>
+  </div>
 
-    <div class="admin-tabs">
-      <button class="admin-tab active" data-tab="customers">客户数据</button>
-      <button class="admin-tab" data-tab="reps">业务员</button>
-      <button class="admin-tab" data-tab="fields">登记字段</button>
-    </div>
-
-    <section id="tab-customers" class="tab-panel">
-      <div class="card">
-        <div class="row">
-          <div><h2 style="margin:0">全部客户登记数据</h2><div class="small">管理员可编辑、删除任意客户；可按客户信息或业务员用户名搜索。</div></div>
-          <div class="spacer"></div>
-          <input id="customerSearch" class="search" placeholder="搜索…">
-          <button id="exportBtn" class="btn soft">导出 CSV</button>
-          <button id="refreshCustomers" class="btn soft">刷新</button>
-        </div>
-        <div id="customerList" style="margin-top:16px"></div>
+  <div class="shell admin-shell">
+    <aside class="admin-sidebar">
+      <div class="sidebar-card">
+        <div class="sidebar-section-title">客户视图</div>
+        <button class="sidebar-item active" data-view="all">
+          <span class="sidebar-icon">▦</span><span class="sidebar-text">全部客户</span><span id="allCustomerCount" class="sidebar-count">0</span>
+        </button>
+        <div id="repCustomerNav" class="rep-customer-nav"></div>
+        <div class="sidebar-divider"></div>
+        <div class="sidebar-section-title">管理</div>
+        <button class="sidebar-item" data-view="reps"><span class="sidebar-icon">◎</span><span class="sidebar-text">业务员管理</span></button>
+        <button class="sidebar-item" data-view="fields"><span class="sidebar-icon">≡</span><span class="sidebar-text">登记字段</span><span id="sidebarFieldCount" class="sidebar-count">0</span></button>
       </div>
-    </section>
+    </aside>
 
-    <section id="tab-reps" class="tab-panel" hidden>
-      <div class="card">
-        <div class="section-title"><div class="dot"></div><h2>业务员用户名</h2><div class="spacer"></div><span class="pill">无需密码</span></div>
-        <div class="grid3">
-          <div class="field"><label>业务员用户名</label><input id="repUsername" placeholder="例如 zhangsan"></div>
-          <div class="field"><label>显示名称（可选）</label><input id="repDisplayName" placeholder="例如 张三"></div>
-        </div>
-        <div class="row" style="margin-top:14px"><button id="createRep" class="btn primary">创建业务员用户名</button><button id="refreshReps" class="btn soft">刷新列表</button></div>
-        <div id="repNote" class="notice" hidden></div>
-        <div id="repList" style="margin-top:16px"></div>
+    <main class="admin-main">
+      <div class="stats">
+        <div class="stat"><div id="totalCustomers" class="n">0</div><div class="l">全部客户</div></div>
+        <div class="stat"><div id="salesCount" class="n">0</div><div class="l">业务员用户名</div></div>
+        <div class="stat"><div id="activeFields" class="n">0</div><div class="l">启用登记项目</div></div>
       </div>
-    </section>
 
-    <section id="tab-fields" class="tab-panel" hidden>
-      <div class="card">
-        <div class="section-title"><div class="dot"></div><h2>登记字段管理</h2><div class="spacer"></div><span class="pill">拖拽即可排序 · 所有业务员自动同步</span></div>
-        <div class="grid3">
-          <div class="field"><label>字段名称</label><input id="fieldLabel" placeholder="例如 客户生日"></div>
-          <div class="field"><label>字段类型</label><select id="fieldType"><option value="text">文本</option><option value="number">数字</option><option value="date">日期</option><option value="email">邮箱</option><option value="tel">电话</option><option value="textarea">长文本</option><option value="select">下拉选项</option></select></div>
-          <div class="field"><label>下拉选项（逗号分隔）</label><input id="fieldOptions" placeholder="例如 高,中,低"></div>
-          <div class="field"><label>是否必填</label><select id="fieldRequired"><option value="false">非必填</option><option value="true">必填</option></select></div>
+      <section id="view-customers" class="admin-view">
+        <div class="card">
+          <div class="row">
+            <div>
+              <h2 id="customerViewTitle" style="margin:0">全部客户</h2>
+              <div id="customerViewDesc" class="small">显示所有业务员登记的客户。管理员可编辑、删除任意客户。</div>
+            </div>
+            <div class="spacer"></div>
+            <input id="customerSearch" class="search" placeholder="搜索客户信息…">
+            <button id="exportBtn" class="btn soft">导出 CSV</button>
+            <button id="refreshCustomers" class="btn soft">刷新</button>
+          </div>
+          <div id="customerList" style="margin-top:16px"></div>
         </div>
-        <button id="addField" class="btn primary" style="margin-top:14px">添加登记项目</button>
-        <div id="fieldNote" class="notice" hidden></div>
-        <div id="fieldList" style="margin-top:16px"></div>
-      </div>
-    </section>
+      </section>
+
+      <section id="view-reps" class="admin-view" hidden>
+        <div class="card">
+          <div class="section-title"><div class="dot"></div><h2>业务员管理</h2><div class="spacer"></div><span class="pill">用户名登录 · 无需密码</span></div>
+          <div class="grid3">
+            <div class="field"><label>业务员用户名</label><input id="repUsername" placeholder="例如 zhangsan"></div>
+            <div class="field"><label>显示名称（可选）</label><input id="repDisplayName" placeholder="例如 张三"></div>
+          </div>
+          <div class="row" style="margin-top:14px"><button id="createRep" class="btn primary">创建业务员用户名</button><button id="refreshReps" class="btn soft">刷新列表</button></div>
+          <div id="repNote" class="notice" hidden></div>
+          <div id="repList" style="margin-top:16px"></div>
+        </div>
+      </section>
+
+      <section id="view-fields" class="admin-view" hidden>
+        <div class="card">
+          <div class="section-title"><div class="dot"></div><h2>登记字段管理</h2><div class="spacer"></div><span class="pill">拖拽排序 · 业务员自动同步</span></div>
+          <div class="grid3">
+            <div class="field"><label>字段名称</label><input id="fieldLabel" placeholder="例如 客户生日"></div>
+            <div class="field"><label>字段类型</label><select id="fieldType"><option value="text">文本</option><option value="number">数字</option><option value="date">日期</option><option value="email">邮箱</option><option value="tel">电话</option><option value="textarea">长文本</option><option value="select">下拉选项</option></select></div>
+            <div class="field"><label>下拉选项（逗号分隔）</label><input id="fieldOptions" placeholder="例如 高,中,低"></div>
+            <div class="field"><label>是否必填</label><select id="fieldRequired"><option value="false">非必填</option><option value="true">必填</option></select></div>
+          </div>
+          <button id="addField" class="btn primary" style="margin-top:14px">添加登记项目</button>
+          <div id="fieldNote" class="notice" hidden></div>
+          <div id="fieldList" style="margin-top:16px"></div>
+        </div>
+      </section>
+    </main>
   </div>
 </div>
 
@@ -70,23 +87,58 @@
 
 <script type="module">
 import { base44, esc, showMessage, buildFieldControl, formatDate, downloadCsv } from './base44.js';
+
 const ADMIN_HASH='78fd5f1e5a3f6eef05ab8d692942fd0ff4a8f4cc0e6087026626006a7fae452d';
 let reps=[],fields=[],customers=[],editingCustomerId=null,draggedFieldId=null,dragSaving=false;
+let currentView='all',currentRepFilter='';
+
 const loginView=document.getElementById('loginView'),appView=document.getElementById('appView'),loginNote=document.getElementById('loginNote');
 const customerModal=document.getElementById('customerModal'),customerEditForm=document.getElementById('customerEditForm'),customerEditNote=document.getElementById('customerEditNote');
 
 function unwrap(v){return Array.isArray(v)?v:(v?.items||[])}
 async function sha256(v){const b=new TextEncoder().encode(v);const h=await crypto.subtle.digest('SHA-256',b);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 
-document.querySelectorAll('.admin-tab').forEach(btn=>btn.onclick=()=>{
-  document.querySelectorAll('.admin-tab').forEach(x=>x.classList.toggle('active',x===btn));
-  document.querySelectorAll('.tab-panel').forEach(x=>x.hidden=true);
-  document.getElementById('tab-'+btn.dataset.tab).hidden=false;
-});
+function showAdminView(view,repUsername=''){
+  currentView=view;currentRepFilter=repUsername||'';
+  document.querySelectorAll('.admin-view').forEach(x=>x.hidden=true);
+  document.querySelectorAll('.sidebar-item').forEach(x=>x.classList.remove('active'));
+
+  if(view==='all'||view==='rep'){
+    document.getElementById('view-customers').hidden=false;
+    if(view==='all'){
+      document.querySelector('.sidebar-item[data-view="all"]').classList.add('active');
+      document.getElementById('customerViewTitle').textContent='全部客户';
+      document.getElementById('customerViewDesc').textContent='显示所有业务员登记的客户。管理员可编辑、删除任意客户。';
+    }else{
+      const rep=reps.find(r=>String(r.username||'')===String(repUsername));
+      const btn=[...document.querySelectorAll('.sidebar-item[data-rep]')].find(x=>x.dataset.rep===repUsername);
+      if(btn)btn.classList.add('active');
+      const name=rep?.display_name||rep?.username||repUsername;
+      document.getElementById('customerViewTitle').textContent=name+' 的客户';
+      document.getElementById('customerViewDesc').textContent='只显示业务员 '+repUsername+' 登记的客户。';
+    }
+    renderCustomers();
+    return;
+  }
+
+  if(view==='reps'){
+    document.getElementById('view-reps').hidden=false;
+    document.querySelector('.sidebar-item[data-view="reps"]').classList.add('active');
+  }
+  if(view==='fields'){
+    document.getElementById('view-fields').hidden=false;
+    document.querySelector('.sidebar-item[data-view="fields"]').classList.add('active');
+  }
+}
+
+document.querySelector('.sidebar-item[data-view="all"]').onclick=()=>showAdminView('all');
+document.querySelector('.sidebar-item[data-view="reps"]').onclick=()=>showAdminView('reps');
+document.querySelector('.sidebar-item[data-view="fields"]').onclick=()=>showAdminView('fields');
 
 async function enter(){
   loginView.hidden=true;appView.hidden=false;
   await Promise.all([loadReps(),loadFields(),loadCustomers()]);
+  showAdminView('all');
   try{
     base44.entities.SalesRep.subscribe(()=>loadReps());
     base44.entities.FormField.subscribe(()=>{if(!dragSaving){loadFields();loadCustomers()}});
@@ -105,12 +157,30 @@ async function loadReps(){
     reps=unwrap(await base44.entities.SalesRep.list({sort:'-created_date',limit:500}));
     document.getElementById('salesCount').textContent=reps.length;
     renderReps();
+    renderSidebar();
   }catch(err){document.getElementById('repList').innerHTML='<div class="notice err">读取业务员失败：'+esc(err?.message||String(err))+'</div>'}
+}
+function renderSidebar(){
+  const nav=document.getElementById('repCustomerNav');
+  nav.innerHTML=reps.map(r=>{
+    const count=customers.filter(c=>String(c.rep_username||'')===String(r.username||'')).length;
+    const label=r.display_name||r.username||'未命名';
+    return '<button class="sidebar-item" data-view="rep" data-rep="'+esc(r.username||'')+'"><span class="sidebar-avatar">'+esc(String(label).slice(0,1).toUpperCase())+'</span><span class="sidebar-text"><b>'+esc(label)+'</b><small>'+esc(r.username||'')+'</small></span><span class="sidebar-count">'+count+'</span></button>';
+  }).join('');
+  nav.querySelectorAll('.sidebar-item[data-rep]').forEach(btn=>btn.onclick=()=>showAdminView('rep',btn.dataset.rep));
+  if(currentView==='rep'&&currentRepFilter){
+    const current=[...nav.querySelectorAll('.sidebar-item[data-rep]')].find(x=>x.dataset.rep===currentRepFilter);
+    if(current)current.classList.add('active');
+    else showAdminView('all');
+  }
 }
 function renderReps(){
   const box=document.getElementById('repList');
   if(!reps.length){box.innerHTML='<div class="empty">还没有业务员用户名</div>';return}
-  box.innerHTML='<div class="table-wrap"><table><thead><tr><th>用户名</th><th>显示名称</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+reps.map(r=>'<tr><td><b>'+esc(r.username||'')+'</b></td><td>'+esc(r.display_name||'')+'</td><td>'+esc(formatDate(r.created_date))+'</td><td><button class="btn danger delrep" data-id="'+r.id+'">删除</button></td></tr>').join('')+'</tbody></table></div>';
+  box.innerHTML='<div class="table-wrap"><table><thead><tr><th>用户名</th><th>显示名称</th><th>客户数</th><th>创建时间</th><th>操作</th></tr></thead><tbody>'+reps.map(r=>{
+    const count=customers.filter(c=>String(c.rep_username||'')===String(r.username||'')).length;
+    return '<tr><td><b>'+esc(r.username||'')+'</b></td><td>'+esc(r.display_name||'')+'</td><td>'+count+'</td><td>'+esc(formatDate(r.created_date))+'</td><td><button class="btn danger delrep" data-id="'+r.id+'">删除</button></td></tr>';
+  }).join('')+'</tbody></table></div>';
   box.querySelectorAll('.delrep').forEach(b=>b.onclick=async()=>{if(!confirm('删除这个业务员用户名？'))return;try{await base44.entities.SalesRep.delete(b.dataset.id);await loadReps()}catch(err){alert('删除失败：'+(err?.message||err))}})
 }
 document.getElementById('createRep').onclick=async()=>{
@@ -129,7 +199,9 @@ document.getElementById('createRep').onclick=async()=>{
 async function loadFields(){
   try{
     fields=unwrap(await base44.entities.FormField.list({sort:'order',limit:500})).sort((a,b)=>(a.order||0)-(b.order||0));
-    document.getElementById('activeFields').textContent=fields.filter(f=>f.active!==false).length;
+    const activeCount=fields.filter(f=>f.active!==false).length;
+    document.getElementById('activeFields').textContent=activeCount;
+    document.getElementById('sidebarFieldCount').textContent=activeCount;
     renderFields();
   }catch(err){document.getElementById('fieldList').innerHTML='<div class="notice err">读取登记字段失败：'+esc(err?.message||String(err))+'</div>'}
 }
@@ -149,8 +221,7 @@ function renderFields(){
       if(!draggedFieldId||draggedFieldId===row.dataset.id)return;
       const from=fields.findIndex(x=>x.id===draggedFieldId),to=fields.findIndex(x=>x.id===row.dataset.id);
       if(from<0||to<0)return;
-      const next=[...fields],moved=next.splice(from,1)[0];next.splice(to,0,moved);fields=next;renderFields();
-      await saveFieldOrder();
+      const next=[...fields],moved=next.splice(from,1)[0];next.splice(to,0,moved);fields=next;renderFields();await saveFieldOrder();
     };
   });
 }
@@ -177,12 +248,21 @@ document.getElementById('addField').onclick=async()=>{
 async function loadCustomers(){
   try{
     customers=unwrap(await base44.entities.Customer.list({sort:'-created_date',limit:1000}));
-    document.getElementById('totalCustomers').textContent=customers.length;renderCustomers()
+    document.getElementById('totalCustomers').textContent=customers.length;
+    document.getElementById('allCustomerCount').textContent=customers.length;
+    renderCustomers();renderSidebar();renderReps();
   }catch(err){document.getElementById('customerList').innerHTML='<div class="notice err">读取客户失败：'+esc(err?.message||String(err))+'</div>'}
 }
+function getVisibleCustomers(){
+  const q=document.getElementById('customerSearch').value.trim().toLowerCase();
+  return customers.filter(r=>{
+    if(currentView==='rep'&&String(r.rep_username||'')!==String(currentRepFilter||''))return false;
+    return (String(r.rep_username||'')+' '+JSON.stringify(r.data||{})).toLowerCase().includes(q);
+  });
+}
 function renderCustomers(){
-  const q=document.getElementById('customerSearch').value.trim().toLowerCase(),active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
-  const rows=customers.filter(r=>(String(r.rep_username||'')+' '+JSON.stringify(r.data||{})).toLowerCase().includes(q));
+  const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
+  const rows=getVisibleCustomers();
   const box=document.getElementById('customerList');
   if(!rows.length){box.innerHTML='<div class="empty">暂无匹配客户</div>';return}
   box.innerHTML='<div class="table-wrap"><table><thead><tr><th>业务员用户名</th><th>登记时间</th>'+active.map(f=>'<th>'+esc(f.label)+'</th>').join('')+'<th>操作</th></tr></thead><tbody>'+rows.map(r=>'<tr><td><b>'+esc(r.rep_username||'')+'</b></td><td>'+esc(formatDate(r.created_date))+'</td>'+active.map(f=>'<td>'+esc(r.data?.[f.field_key]||'')+'</td>').join('')+'<td><div class="row nowrap"><button class="btn soft editcustomer" data-id="'+r.id+'">编辑</button><button class="btn danger delcustomer" data-id="'+r.id+'">删除</button></div></td></tr>').join('')+'</tbody></table></div>';
@@ -208,7 +288,8 @@ customerEditForm.onsubmit=async e=>{
 
 document.getElementById('exportBtn').onclick=()=>{
   const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
-  downloadCsv('客户登记数据.csv',[['业务员用户名','登记时间',...active.map(f=>f.label)],...customers.map(r=>[r.rep_username||'',formatDate(r.created_date),...active.map(f=>r.data?.[f.field_key]||'')])])
+  const rows=getVisibleCustomers();
+  downloadCsv(currentView==='rep'?(currentRepFilter+'_客户数据.csv'):'客户登记数据.csv',[['业务员用户名','登记时间',...active.map(f=>f.label)],...rows.map(r=>[r.rep_username||'',formatDate(r.created_date),...active.map(f=>r.data?.[f.field_key]||'')])])
 };
 document.getElementById('customerSearch').oninput=renderCustomers;
 document.getElementById('refreshCustomers').onclick=loadCustomers;
