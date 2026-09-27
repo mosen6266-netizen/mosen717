@@ -514,7 +514,7 @@ function previewCard(row){
   const repOptions=['<option value="">未指定</option>',...reps.map(r=>'<option value="'+esc(r.username)+'" '+(String(row.rep_username||'')===String(r.username||'')?'selected':'')+'>'+esc(r.display_name||r.username)+' ('+esc(r.username)+')</option>')].join('');
   const done=new Set((row.completed_progress_ids||[]).map(String));
   const progressHtml=progressStages.length?progressStages.map((p,i)=>'<label class="progress-check '+(done.has(String(p.id))?'checked':'')+'"><input type="checkbox" data-preview-progress-id="'+p.id+'" '+(done.has(String(p.id))?'checked':'')+'><span class="progress-check-index">'+(i+1)+'</span><span class="progress-check-label">'+esc(p.label)+'</span><span class="progress-check-mark">✓</span></label>').join(''):'<div class="progress-empty">管理员还没有设置客户进度。</div>';
-  return '<div class="preview-panel-head"><div><div class="preview-title">客户完整信息</div><div class="preview-subtitle">可直接编辑资料、业务员归属和客户进度</div></div><button class="preview-close-btn" type="button">关闭</button></div><div class="preview-meta-row"><div class="field"><label>所属业务员</label><select data-preview-rep>'+repOptions+'</select></div><div class="preview-readonly"><span>登记时间</span><b>'+esc(formatDate(row.created_date)||'—')+'</b></div></div><div class="preview-editor-grid">'+buildGroupedFieldControls(active,row.data||{})+'</div><div class="preview-progress-block preview-progress-edit"><div class="preview-progress-head"><b>客户进度</b><strong data-preview-percent style="color:'+s.solid+'">'+s.percent+'%</strong></div><div class="percent-progress"><span data-preview-bar style="width:'+s.percent+'%;background:'+s.solid+'"></span></div><div class="preview-progress-meta" data-preview-meta>已完成 '+s.completed+' / '+s.total+' 项</div><div class="progress-checklist preview-progress-checklist">'+progressHtml+'</div></div><div class="preview-save-bar"><div class="notice" data-preview-note hidden></div><div class="spacer"></div><button class="btn primary preview-save-btn" type="button">保存修改</button></div>';
+  return '<div class="preview-panel-head"><div><div class="preview-title">客户完整信息</div><div class="preview-subtitle">可直接编辑资料、业务员归属和客户进度</div></div><div class="row"><button class="btn soft preview-copy-btn" type="button">复制资料</button><button class="preview-close-btn" type="button">关闭</button></div></div><div class="preview-meta-row"><div class="field"><label>所属业务员</label><select data-preview-rep>'+repOptions+'</select></div><div class="preview-readonly"><span>登记时间</span><b>'+esc(formatDate(row.created_date)||'—')+'</b></div></div><div class="preview-editor-grid">'+buildGroupedFieldControls(active,row.data||{})+'</div><div class="preview-progress-block preview-progress-edit"><div class="preview-progress-head"><b>客户进度</b><strong data-preview-percent style="color:'+s.solid+'">'+s.percent+'%</strong></div><div class="percent-progress"><span data-preview-bar style="width:'+s.percent+'%;background:'+s.solid+'"></span></div><div class="preview-progress-meta" data-preview-meta>已完成 '+s.completed+' / '+s.total+' 项</div><div class="progress-checklist preview-progress-checklist">'+progressHtml+'</div></div><div class="preview-save-bar"><div class="notice" data-preview-note hidden></div><div class="spacer"></div><button class="btn primary preview-save-btn" type="button">保存修改</button></div>';
 }
 function getPreviewPortal(){
   let portal=document.getElementById('customerPreviewPortal');
@@ -531,6 +531,7 @@ function updatePreviewProgressUI(portal){
 }
 function attachAdminPreviewEditor(portal,row){
   portal.querySelector('.preview-close-btn')?.addEventListener('click',()=>{portal.dataset.pinned='0';portal.hidden=true;portal.innerHTML=''});
+  portal.querySelector('.preview-copy-btn')?.addEventListener('click',()=>copyAdminCustomer(row));
   portal.querySelectorAll('[data-preview-progress-id]').forEach(cb=>cb.onchange=()=>{cb.closest('.progress-check').classList.toggle('checked',cb.checked);updatePreviewProgressUI(portal)});
   portal.querySelector('.preview-save-btn')?.addEventListener('click',async()=>{
     const note=portal.querySelector('[data-preview-note]'),btn=portal.querySelector('.preview-save-btn');
@@ -905,7 +906,7 @@ function renderCustomers(){
 }
 function adminCurrentEditorState(){
   const data={};customerEditForm.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
-  const completed_progress_ids=[...document.querySelectorAll('#adminProgressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
+  const completed_progress_ids=[...document.querySelectorAll('#adminProgressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId).sort();
   return JSON.stringify({data,completed_progress_ids,rep_username:document.getElementById('editRep').value});
 }
 function adminDraftKey(){return 'm717_draft_admin_'+(editingCustomerId||'none')}
@@ -923,7 +924,7 @@ function openCustomerEditor(row){
   initDateTimeControls(document.getElementById('customerEditFields'));
   renderAdminProgressChecklist(row.completed_progress_ids||[]);
   customerEditNote.hidden=true;customerModal.hidden=false;
-  adminEditorBaseline=JSON.stringify({data:row.data||{},completed_progress_ids:(row.completed_progress_ids||[]).map(String),rep_username:row.rep_username||''});
+  adminEditorBaseline=JSON.stringify({data:row.data||{},completed_progress_ids:(row.completed_progress_ids||[]).map(String).sort(),rep_username:row.rep_username||''});
   try{const raw=localStorage.getItem(adminDraftKey());if(raw){const d=JSON.parse(raw);if(d?.data){document.getElementById('customerEditFields').innerHTML=buildGroupedFieldControls(active,d.data);initDateTimeControls(document.getElementById('customerEditFields'));document.getElementById('editRep').value=d.rep_username||row.rep_username||'';renderAdminProgressChecklist(d.completed_progress_ids||[]);showMessage(customerEditNote,'已恢复上次未保存的草稿。','ok')}}}catch(_){}
 }
 customerEditForm.onsubmit=async e=>{
