@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-35"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-36"></head><body>
 <div class="topbar"><div class="brand-lockup"><img class="brand-logo" src="./mosen-logo.svg?v=20260926-18" alt="墨森"><div><div class="brand">墨森维权客户登记系统</div><div id="who" class="subbrand"></div></div></div><div class="row"><button id="newBtn" class="btn primary">＋ 登记客户</button><button id="logoutBtn" class="btn soft">退出</button></div></div>
 <div class="shell"><div class="stats"><div class="stat"><div id="myCount" class="n">0</div><div class="l">我的客户</div></div><div class="stat"><div id="fieldCount" class="n">0</div><div class="l">当前登记项目</div></div><div class="stat"><div id="todayCount" class="n">0</div><div class="l">今日新增</div></div></div>
 <div class="card">
@@ -202,7 +202,7 @@ function attachSalesPreviewEditor(portal,row){
     const completed_progress_ids=[...portal.querySelectorAll('[data-preview-progress-id]:checked')].map(x=>x.dataset.previewProgressId);
     btn.disabled=true;showMessage(note,'正在保存…');
     try{
-      await base44.entities.Customer.update(row.id,{rep_username:username,data,completed_progress_ids});
+      await base44.entities.Customer.update(row.id,{rep_username:username,data,completed_progress_ids,admin_sort_score:completed_progress_ids.length});
       await logCustomerDiff(row,data,completed_progress_ids,row.id);
       row.data=data;row.completed_progress_ids=completed_progress_ids;
       showMessage(note,'已保存并同步。','ok');
@@ -341,10 +341,10 @@ form.onsubmit=async e=>{
   try{
     if(editingId){
       const oldRow=customers.find(x=>String(x.id)===String(editingId));
-      await base44.entities.Customer.update(editingId,{rep_username:username,data,completed_progress_ids});
+      await base44.entities.Customer.update(editingId,{rep_username:username,data,completed_progress_ids,admin_sort_score:completed_progress_ids.length});
       if(oldRow)await logCustomerDiff(oldRow,data,completed_progress_ids,editingId);
     }else{
-      const created=await base44.entities.Customer.create({rep_username:username,data,completed_progress_ids,archived:false,starred:false});
+      const created=await base44.entities.Customer.create({rep_username:username,data,completed_progress_ids,archived:false,starred:false,admin_sort_score:completed_progress_ids.length});
       const cid=created?.id||'';
       await writeSalesLog({
         action_type:'customer_create',customer_id:cid,customer_name:customerNameFromData(data),
