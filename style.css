@@ -373,3 +373,23 @@ a{color:inherit}.topbar{height:66px;background:rgba(255,255,255,.94);backdrop-fi
 .customer-pager-actions{display:flex;gap:8px}
 .customer-pager .btn[disabled]{opacity:.45;cursor:not-allowed;pointer-events:none}
 @media(max-width:680px){.customer-pager{align-items:stretch;flex-direction:column}.customer-pager-actions{display:grid;grid-template-columns:1fr 1fr}.customer-pager-actions .btn{width:100%}}
+
+/* v30 persistent customer edit modal */
+.customer-edit-modal-card{position:relative;overscroll-behavior:contain}
+.customer-edit-modal-header{
+  position:sticky;
+  top:-22px;
+  z-index:30;
+  margin:-22px -22px 0;
+  padding:18px 22px 14px;
+  min-height:58px;
+  background:rgba(255,255,255,.97);
+  backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);
+  border-bottom:1px solid #eaecf0;
+  box-shadow:0 5px 14px rgba(16,24,40,.035)
+}
+.customer-edit-modal-header .btn{flex:0 0 auto}
+@media(max-width:680px){
+  .customer-edit-modal-header{top:-22px;margin:-22px -22px 0;padding:16px 18px 13px}
+}
