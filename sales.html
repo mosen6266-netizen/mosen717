@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-33"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-34"></head><body>
 <div class="topbar"><div class="brand-lockup"><img class="brand-logo" src="./mosen-logo.svg?v=20260926-18" alt="墨森"><div><div class="brand">墨森维权客户登记系统</div><div id="who" class="subbrand"></div></div></div><div class="row"><button id="newBtn" class="btn primary">＋ 登记客户</button><button id="logoutBtn" class="btn soft">退出</button></div></div>
 <div class="shell"><div class="stats"><div class="stat"><div id="myCount" class="n">0</div><div class="l">我的客户</div></div><div class="stat"><div id="fieldCount" class="n">0</div><div class="l">当前登记项目</div></div><div class="stat"><div id="todayCount" class="n">0</div><div class="l">今日新增</div></div></div>
 <div class="card">
@@ -30,94 +30,90 @@
     <div class="small" style="margin:8px 0 12px">点击下面每一个进度即可打勾或取消，最后点击“保存客户”。</div>
     <div id="progressChecklist" class="progress-checklist"></div>
   </div>
-  <div class="row customer-edit-save-bar"><button class="btn primary" type="submit">保存客户</button><button id="cancelEdit" class="btn soft" type="button">取消</button></div>
+  <div class="row customer-edit-save-bar"><span id="salesDraftStatus" class="draft-status">草稿保护已开启</span><div class="spacer"></div><button class="btn primary" type="submit">保存客户</button><button id="cancelEdit" class="btn soft" type="button">取消</button></div>
 </form><div id="formNote" class="notice" hidden></div></div></div>
 
 <script type="module">
-import { base44, esc, showMessage, buildFieldControl, buildGroupedFieldControls, initDateTimeControls, formatDate, uiAlert, uiConfirm, uiPrompt } from './base44.js?v=20260927-33';
+import { base44, esc, showMessage, buildFieldControl, buildGroupedFieldControls, initDateTimeControls, formatDate, uiAlert, uiConfirm, uiPrompt } from './base44.js?v=20260927-34';
 let username=localStorage.getItem('m717_rep_username')||'',displayName=localStorage.getItem('m717_rep_display_name')||'',fields=[],customers=[],progressStages=[],editingId=null;
 const CUSTOMER_PAGE_SIZE=50;
-let customerPage=1,customerHasNext=false,myCustomerTotal=0,myArchivedTotal=0,myTodayTotal=0,customerCountTimer=null;
-let customerMode='active',globalCustomerRows=null,searchTimer=null,editorBaseline='',draftTimer=null;
+let customerPage=1,customerHasNext=false,myCustomerTotal=0,myArchivedTotal=0,myTodayTotal=0,customerCountTimer=null,lastMyCountRefresh=0;
+let customerMode='active',searchTimer=null,editorBaseline='',draftTimer=null;
 const modal=document.getElementById('modal'),form=document.getElementById('customerForm'),note=document.getElementById('formNote'),list=document.getElementById('customerList');
 function unwrap(v){return Array.isArray(v)?v:(v?.items||[])}
+function makeCustomerSearchText(repUsername='',data={}){return (String(repUsername||'')+' '+JSON.stringify(data||{})).toLowerCase()}
+function escapeSearchRegex(value=''){const specials='\\^$.*+?()[]{}|';return [...String(value)].map(ch=>specials.includes(ch)?'\\'+ch:ch).join('')}
+function stableData(data={}){const out={};Object.keys(data||{}).sort().forEach(k=>out[k]=data[k]);return out}
+function archiveDeleteDate(row){if(!row?.archived_at)return '';const d=new Date(row.archived_at);if(Number.isNaN(d.getTime()))return '';d.setDate(d.getDate()+30);return formatDate(d.toISOString())}
+async function ensureSalesSearchIndex(){
+  for(let round=0;round<20;round++){
+    const batch=unwrap(await base44.entities.Customer.filter({rep_username:username,$or:[{search_text:{$exists:false}},{search_text:''}]},'created_date',50,0));
+    if(!batch.length)break;
+    for(let i=0;i<batch.length;i+=10)await Promise.all(batch.slice(i,i+10).map(row=>base44.entities.Customer.update(row.id,{search_text:makeCustomerSearchText(username,row.data)}).catch(()=>null)));
+    if(batch.length<50)break;
+  }
+}
 async function boot(){
   if(!username){location.href='./login.html';return}
   try{
     const reps=unwrap(await base44.entities.SalesRep.list({sort:'-created_date',limit:500}));const rep=reps.find(r=>String(r.username||'').toLowerCase()===username.toLowerCase());
     if(!rep){localStorage.removeItem('m717_rep_username');location.href='./login.html';return}
     displayName=rep.display_name||rep.username;document.getElementById('who').textContent=displayName;document.getElementById('repLabel').textContent=username;
+    cleanupSalesDrafts();
+    await ensureSalesSearchIndex();
     await Promise.all([loadFields(),loadProgress(),refreshMyCustomerCounts(),loadCustomers({resetPage:true})]);
     try{base44.entities.FormField.subscribe(()=>loadFields());base44.entities.ProgressStage.subscribe(()=>{loadProgress();loadCustomers()});base44.entities.Customer.subscribe(()=>{loadCustomers();scheduleMyCustomerCountRefresh()});base44.entities.SalesRep.subscribe(()=>verifyRep())}catch(_){}
   }catch(_){location.href='./login.html'}
 }
 async function verifyRep(){const reps=unwrap(await base44.entities.SalesRep.list({sort:'-created_date',limit:500}));if(!reps.some(r=>String(r.username||'').toLowerCase()===username.toLowerCase())){localStorage.removeItem('m717_rep_username');location.href='./login.html'}}
-async function loadFields(){fields=unwrap(await base44.entities.FormField.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));document.getElementById('fieldCount').textContent=fields.length;renderForm()}
-async function loadProgress(){progressStages=unwrap(await base44.entities.ProgressStage.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));renderProgressChecklist();const sel=document.getElementById('salesProgressFilter');if(sel)sel.innerHTML='<option value="">全部进度</option>'+progressStages.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.label)+'</option>').join('')}
+async function loadFields(){fields=unwrap(await base44.entities.FormField.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));document.getElementById('fieldCount').textContent=fields.length;if(modal.hidden)renderForm()}
+async function loadProgress(){progressStages=unwrap(await base44.entities.ProgressStage.list({sort:'order',limit:500})).filter(x=>x.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));if(modal.hidden)renderProgressChecklist();const sel=document.getElementById('salesProgressFilter');if(sel)sel.innerHTML='<option value="">全部进度</option>'+progressStages.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.label)+'</option>').join('')}
 async function fetchAllSalesCustomers(query){
   const all=[];let skip=0;
-  while(true){
-    const batch=unwrap(await base44.entities.Customer.filter(query,'-created_date',500,skip));
-    all.push(...batch);if(batch.length<500)break;skip+=500;if(skip>10000)break;
-  }
+  while(true){const batch=unwrap(await base44.entities.Customer.filter(query,'-created_date',500,skip));all.push(...batch);if(batch.length<500)break;skip+=500;if(skip>10000)break}
   return all;
 }
 function salesBaseQuery(){
-  return {rep_username:username,archived:customerMode==='archive'};
-}
-function salesFilterActive(){
-  return !!((document.getElementById('search')?.value||'').trim()||(document.getElementById('salesStarFilter')?.value||'')||(document.getElementById('salesProgressFilter')?.value||'')||(document.getElementById('salesCountryFilter')?.value||'').trim());
-}
-function matchesSalesFilters(r){
-  const q=(document.getElementById('search')?.value||'').trim().toLowerCase();
+  const query={rep_username:username,archived:customerMode==='archive'};
   const star=document.getElementById('salesStarFilter')?.value||'';
+  if(star)query.starred=star==='1';
   const progress=document.getElementById('salesProgressFilter')?.value||'';
-  const country=(document.getElementById('salesCountryFilter')?.value||'').trim().toLowerCase();
-  const hay=(String(r.rep_username||'')+' '+JSON.stringify(r.data||{})).toLowerCase();
-  if(q&&!hay.includes(q))return false;
-  if(star==='1'&&r.starred!==true)return false;
-  if(star==='0'&&r.starred===true)return false;
-  if(progress&&!(r.completed_progress_ids||[]).map(String).includes(String(progress)))return false;
-  if(country&&!hay.includes(country))return false;
-  return true;
+  if(progress)query.completed_progress_ids=progress;
+  const terms=[];
+  const text=(document.getElementById('search')?.value||'').trim();
+  const country=(document.getElementById('salesCountryFilter')?.value||'').trim();
+  if(text)terms.push({search_text:{$regex:escapeSearchRegex(text),$options:'i'}});
+  if(country)terms.push({search_text:{$regex:escapeSearchRegex(country),$options:'i'}});
+  if(terms.length)query.$and=terms;
+  return query;
 }
+function salesFilterActive(){return !!((document.getElementById('search')?.value||'').trim()||(document.getElementById('salesStarFilter')?.value||'')||(document.getElementById('salesProgressFilter')?.value||'')||(document.getElementById('salesCountryFilter')?.value||'').trim())}
 async function refreshMyCustomerCounts(){
   const all=await fetchAllSalesCustomers({rep_username:username});
   const today=new Date().toISOString().slice(0,10);
-  myArchivedTotal=all.filter(x=>x.archived===true).length;
-  myCustomerTotal=all.length-myArchivedTotal;
-  myTodayTotal=all.filter(x=>x.archived!==true&&String(x.created_date||'').slice(0,10)===today).length;
-  document.getElementById('myCount').textContent=myCustomerTotal;
-  document.getElementById('todayCount').textContent=myTodayTotal;
-  document.getElementById('activeCustomerTabCount').textContent=myCustomerTotal;
-  document.getElementById('archiveCustomerTabCount').textContent=myArchivedTotal;
+  myArchivedTotal=all.filter(x=>x.archived===true).length;myCustomerTotal=all.length-myArchivedTotal;
+  myTodayTotal=all.filter(x=>x.archived!==true&&String(x.created_date||'').slice(0,10)===today).length;lastMyCountRefresh=Date.now();
+  document.getElementById('myCount').textContent=myCustomerTotal;document.getElementById('todayCount').textContent=myTodayTotal;
+  document.getElementById('activeCustomerTabCount').textContent=myCustomerTotal;document.getElementById('archiveCustomerTabCount').textContent=myArchivedTotal;
 }
 function scheduleMyCustomerCountRefresh(){
-  clearTimeout(customerCountTimer);customerCountTimer=setTimeout(()=>refreshMyCustomerCounts().catch(()=>{}),1000);
+  if(customerCountTimer)return;
+  const wait=Math.max(0,30000-(Date.now()-lastMyCountRefresh));
+  customerCountTimer=setTimeout(async()=>{customerCountTimer=null;await refreshMyCustomerCounts().catch(()=>{})},wait);
 }
 async function loadCustomers({resetPage=false,refreshCounts=false}={}){
   if(resetPage)customerPage=1;
+  const skip=(customerPage-1)*CUSTOMER_PAGE_SIZE;
   try{
-    if(salesFilterActive()){
-      globalCustomerRows=(await fetchAllSalesCustomers(salesBaseQuery())).filter(matchesSalesFilters);
-      const start=(customerPage-1)*CUSTOMER_PAGE_SIZE;
-      customers=globalCustomerRows.slice(start,start+CUSTOMER_PAGE_SIZE);
-      customerHasNext=start+CUSTOMER_PAGE_SIZE<globalCustomerRows.length;
-      if(!customers.length&&customerPage>1){customerPage--;return loadCustomers({refreshCounts})}
-    }else{
-      globalCustomerRows=null;
-      const skip=(customerPage-1)*CUSTOMER_PAGE_SIZE;
-      const rows=unwrap(await base44.entities.Customer.filter(salesBaseQuery(),'-created_date',CUSTOMER_PAGE_SIZE+1,skip));
-      customerHasNext=rows.length>CUSTOMER_PAGE_SIZE;
-      customers=rows.slice(0,CUSTOMER_PAGE_SIZE);
-      if(!customers.length&&customerPage>1){customerPage--;return loadCustomers({refreshCounts})}
-    }
+    const rows=unwrap(await base44.entities.Customer.filter(salesBaseQuery(),'-created_date',CUSTOMER_PAGE_SIZE+1,skip));
+    customerHasNext=rows.length>CUSTOMER_PAGE_SIZE;customers=rows.slice(0,CUSTOMER_PAGE_SIZE);
+    if(!customers.length&&customerPage>1){customerPage--;return loadCustomers({refreshCounts})}
     renderCustomers();if(refreshCounts)await refreshMyCustomerCounts();
   }catch(err){list.innerHTML='<div class="notice err">读取客户失败：'+esc(err?.message||String(err))+'</div>'}
 }
 function salesPagerHtml(){
-  const total=globalCustomerRows?globalCustomerRows.length:(customerMode==='archive'?myArchivedTotal:myCustomerTotal);
-  return '<div class="customer-pager"><div class="customer-pager-info">第 <b>'+customerPage+'</b> 页 · 每页 '+CUSTOMER_PAGE_SIZE+' 条 · '+(customerMode==='archive'?'归档客户 ':'我的客户 ')+total+' 条</div><div class="customer-pager-actions"><button id="salesPrevPage" class="btn soft" '+(customerPage<=1?'disabled':'')+'>上一页</button><button id="salesNextPage" class="btn soft" '+(!customerHasNext?'disabled':'')+'>下一页</button></div></div>';
+  const total=customerMode==='archive'?myArchivedTotal:myCustomerTotal,filtered=salesFilterActive();
+  return '<div class="customer-pager"><div class="customer-pager-info">第 <b>'+customerPage+'</b> 页 · 每页 '+CUSTOMER_PAGE_SIZE+' 条'+(filtered?' · 后端筛选结果':' · '+(customerMode==='archive'?'归档客户 ':'我的客户 ')+total+' 条')+'</div><div class="customer-pager-actions"><button id="salesPrevPage" class="btn soft" '+(customerPage<=1?'disabled':'')+'>上一页</button><button id="salesNextPage" class="btn soft" '+(!customerHasNext?'disabled':'')+'>下一页</button></div></div>';
 }
 function bindSalesPager(){
   const prev=document.getElementById('salesPrevPage'),next=document.getElementById('salesNextPage');
@@ -146,12 +142,13 @@ function openForm(row=null){
   const originalData=row?.data?{...row.data}:{f_transfer_main_time:localNowMinute()};
   const originalProgress=row?.completed_progress_ids||[];
   renderForm(originalData);renderProgressChecklist(originalProgress);note.hidden=true;modal.hidden=false;
-  editorBaseline=JSON.stringify({data:originalData,completed_progress_ids:originalProgress.map(String).sort()});
+  editorBaseline=JSON.stringify({data:stableData(originalData),completed_progress_ids:originalProgress.map(String).sort()});
+  setSalesDraftStatus('草稿保护已开启');
   try{
     const raw=localStorage.getItem(salesDraftKey());
     if(raw){
-      const d=JSON.parse(raw);
-      if(d?.data){renderForm(d.data);renderProgressChecklist(d.completed_progress_ids||[]);showMessage(note,'已恢复上次未保存的草稿。','ok')}
+      const obj=JSON.parse(raw),d=obj.state||obj;
+      if(d?.data){renderForm(d.data);renderProgressChecklist(d.completed_progress_ids||[]);showMessage(note,'已恢复上次未保存的草稿。','ok');if(obj.saved_at){const t=new Date(obj.saved_at);setSalesDraftStatus('已恢复草稿 '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0'))}}
     }
   }catch(_){}
 }
@@ -202,7 +199,7 @@ function attachSalesPreviewEditor(portal,row){
     const completed_progress_ids=[...portal.querySelectorAll('[data-preview-progress-id]:checked')].map(x=>x.dataset.previewProgressId);
     btn.disabled=true;showMessage(note,'正在保存…');
     try{
-      await base44.entities.Customer.update(row.id,{rep_username:username,data,completed_progress_ids});
+      await base44.entities.Customer.update(row.id,{rep_username:username,data,completed_progress_ids,search_text:makeCustomerSearchText(username,data)});
       await logCustomerDiff(row,data,completed_progress_ids,row.id);
       row.data=data;row.completed_progress_ids=completed_progress_ids;
       showMessage(note,'已保存并同步。','ok');
@@ -255,32 +252,17 @@ async function writeSalesLog(payload){
 }
 function customerNameFromData(data){return data?.f_customer_name||'未命名客户'}
 async function logCustomerDiff(oldRow,newData,newProgress,customerId){
-  const oldData=oldRow?.data||{}, name=customerNameFromData(newData);
+  if(!oldRow)return;
+  const name=customerNameFromData(newData),fieldChanges=[];
   for(const field of fields){
-    const before=oldData[field.field_key]??'',after=newData[field.field_key]??'';
-    if(String(before)!==String(after)){
-      await writeSalesLog({
-        action_type:'field_update',customer_id:customerId,customer_name:name,
-        target_key:field.field_key,target_label:field.label,old_value:before,new_value:after,
-        message:(displayName||username)+' 修改了 '+name+' 的「'+field.label+'」：'+(before||'空')+' → '+(after||'空')
-      });
-    }
+    const before=oldRow.data?.[field.field_key]??'',after=newData?.[field.field_key]??'';
+    if(String(before)!==String(after))fieldChanges.push({key:field.field_key,label:field.label,before,after});
   }
-  const oldSet=new Set((oldRow?.completed_progress_ids||[]).map(String));
-  const newSet=new Set((newProgress||[]).map(String));
-  for(const p of progressStages){
-    const id=String(p.id),was=oldSet.has(id),now=newSet.has(id);
-    if(!was&&now) await writeSalesLog({
-      action_type:'progress_complete',customer_id:customerId,customer_name:name,
-      target_key:id,target_label:p.label,new_value:'已完成',
-      message:(displayName||username)+' 完成了 '+name+' 的客户进度「'+p.label+'」'
-    });
-    if(was&&!now) await writeSalesLog({
-      action_type:'progress_uncheck',customer_id:customerId,customer_name:name,
-      target_key:id,target_label:p.label,old_value:'已完成',new_value:'未完成',
-      message:(displayName||username)+' 取消了 '+name+' 的客户进度「'+p.label+'」'
-    });
-  }
+  const oldSet=new Set((oldRow.completed_progress_ids||[]).map(String)),newSet=new Set((newProgress||[]).map(String)),progressChanges=[];
+  for(const p of progressStages){const id=String(p.id);if(oldSet.has(id)!==newSet.has(id))progressChanges.push({id,label:p.label,before:oldSet.has(id),after:newSet.has(id)})}
+  if(!fieldChanges.length&&!progressChanges.length)return;
+  const parts=[];if(fieldChanges.length)parts.push(fieldChanges.length+'项资料');if(progressChanges.length)parts.push(progressChanges.length+'项进度');
+  await writeSalesLog({action_type:'customer_update',customer_id:customerId,customer_name:name,message:(displayName||username)+' 修改了「'+name+'」的'+parts.join('、'),metadata:{field_changes:fieldChanges,progress_changes:progressChanges}});
 }
 function customerCopyText(row){
   const lines=['客户姓名：'+(fixedCustomerValue(row,'f_customer_name')||''),'业务员：'+(displayName||username)];
@@ -311,7 +293,7 @@ function renderCustomers(){
   const rows=customers;
   if(!rows.length){list.innerHTML='<div class="empty">'+(customerMode==='archive'?'暂无归档客户':'暂无匹配客户')+'</div>'+salesPagerHtml();bindSalesPager();return}
   const eye='<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
-  list.innerHTML='<div class="table-wrap customer-table fixed-customer-table"><table><thead><tr><th>转主号时间</th><th>客户姓名</th><th>手机号</th><th>邮箱</th><th>损失金额</th><th>目前进度</th><th>'+(customerMode==='archive'?'归档信息':'下一步')+'</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r),pl=progressLabels(r);const archiveInfo=r.archived?((r.archive_reason||'未填写原因')+' · '+(formatDate(r.archived_at)||'')):pl.next;return '<tr class="customer-progress-row '+(r.starred?'starred-row':'')+'" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td data-label="转主号时间">'+esc(formatDate(fixedCustomerValue(r,'f_transfer_main_time'))||'—')+'</td><td data-label="客户姓名"><div class="customer-name-stack"><div class="customer-name-line"><button class="star-btn '+(r.starred?'active':'')+'" data-id="'+r.id+'" type="button" title="重点客户">★</button><b>'+esc(fixedCustomerValue(r,'f_customer_name')||'—')+'</b><span class="row-progress-badge">'+s.percent+'%</span></div></div></td><td data-label="手机号">'+esc(fixedCustomerValue(r,'f_phone')||'—')+'</td><td data-label="邮箱">'+esc(fixedCustomerValue(r,'f_email')||'—')+'</td><td data-label="损失金额">'+esc(fixedCustomerValue(r,'f_loss_amount')||'—')+'</td><td data-label="目前进度"><span class="current-progress-text" style="color:'+s.solid+'">'+esc(pl.current)+'</span></td><td data-label="'+(customerMode==='archive'?'归档信息':'下一步')+'">'+esc(archiveInfo||'—')+'</td><td data-label="操作"><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button" aria-label="预览完整客户信息">'+eye+'</button></span><button class="btn soft copycustomer" data-id="'+r.id+'">复制</button>'+(customerMode==='archive'?'<button class="btn soft restorecustomer" data-id="'+r.id+'">恢复</button>':'<button class="btn soft edit" data-id="'+r.id+'">编辑</button><button class="btn soft archivecustomer" data-id="'+r.id+'">归档</button>')+'</div></td></tr>'}).join('')+'</tbody></table></div>'+salesPagerHtml();
+  list.innerHTML='<div class="table-wrap customer-table fixed-customer-table"><table><thead><tr><th>转主号时间</th><th>客户姓名</th><th>手机号</th><th>邮箱</th><th>损失金额</th><th>目前进度</th><th>'+(customerMode==='archive'?'归档信息':'下一步')+'</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r),pl=progressLabels(r);const archiveInfo=r.archived?((r.archive_reason||'未填写原因')+' · 归档 '+(formatDate(r.archived_at)||'')+(archiveDeleteDate(r)?' · 自动删除 '+archiveDeleteDate(r):'')):pl.next;return '<tr class="customer-progress-row '+(r.starred?'starred-row':'')+'" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td data-label="转主号时间">'+esc(formatDate(fixedCustomerValue(r,'f_transfer_main_time'))||'—')+'</td><td data-label="客户姓名"><div class="customer-name-stack"><div class="customer-name-line"><button class="star-btn '+(r.starred?'active':'')+'" data-id="'+r.id+'" type="button" title="重点客户">★</button><b>'+esc(fixedCustomerValue(r,'f_customer_name')||'—')+'</b><span class="row-progress-badge">'+s.percent+'%</span></div></div></td><td data-label="手机号">'+esc(fixedCustomerValue(r,'f_phone')||'—')+'</td><td data-label="邮箱">'+esc(fixedCustomerValue(r,'f_email')||'—')+'</td><td data-label="损失金额">'+esc(fixedCustomerValue(r,'f_loss_amount')||'—')+'</td><td data-label="目前进度"><span class="current-progress-text" style="color:'+s.solid+'">'+esc(pl.current)+'</span></td><td data-label="'+(customerMode==='archive'?'归档信息':'下一步')+'">'+esc(archiveInfo||'—')+'</td><td data-label="操作"><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button" aria-label="预览完整客户信息">'+eye+'</button></span><button class="btn soft copycustomer" data-id="'+r.id+'">复制</button>'+(customerMode==='archive'?'<button class="btn soft restorecustomer" data-id="'+r.id+'">恢复</button>':'<button class="btn soft edit" data-id="'+r.id+'">编辑</button><button class="btn soft archivecustomer" data-id="'+r.id+'">归档</button>')+'</div></td></tr>'}).join('')+'</tbody></table></div>'+salesPagerHtml();
   bindPreviewHover(list);bindSalesPager();
   list.querySelectorAll('.edit').forEach(b=>b.onclick=()=>openForm(customers.find(x=>x.id===b.dataset.id)));
   list.querySelectorAll('.copycustomer').forEach(b=>b.onclick=()=>copyCustomer(customers.find(x=>x.id===b.dataset.id)));
@@ -322,29 +304,38 @@ function renderCustomers(){
 function currentEditorState(){
   const data={};form.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
   const completed_progress_ids=[...document.querySelectorAll('#progressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId).sort();
-  return JSON.stringify({data,completed_progress_ids});
+  return JSON.stringify({data:stableData(data),completed_progress_ids});
 }
 function salesDraftKey(){return 'm717_draft_sales_'+username+'_'+(editingId||'new')}
-function saveSalesDraft(){
-  if(modal.hidden)return;clearTimeout(draftTimer);draftTimer=setTimeout(()=>{try{localStorage.setItem(salesDraftKey(),currentEditorState())}catch(_){}},250)
+function setSalesDraftStatus(text){const el=document.getElementById('salesDraftStatus');if(el)el.textContent=text}
+function cleanupSalesDrafts(){
+  const prefix='m717_draft_sales_'+username+'_',now=Date.now(),items=[];
+  for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key?.startsWith(prefix))continue;try{const obj=JSON.parse(localStorage.getItem(key)||'{}');const saved=Number(obj.saved_at||0);if(saved&&now-saved>30*24*60*60*1000){localStorage.removeItem(key);continue}items.push({key,saved})}catch(_){}}
+  items.sort((a,b)=>b.saved-a.saved);items.slice(100).forEach(x=>localStorage.removeItem(x.key));
 }
-function clearSalesDraft(){try{localStorage.removeItem(salesDraftKey())}catch(_){}}
+function writeSalesDraftNow(){
+  if(modal.hidden)return;
+  try{localStorage.setItem(salesDraftKey(),JSON.stringify({saved_at:Date.now(),state:JSON.parse(currentEditorState())}));const t=new Date();setSalesDraftStatus('草稿已保存 '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0'))}catch(_){setSalesDraftStatus('草稿保存空间已满')}
+}
+function saveSalesDraft(){if(modal.hidden)return;setSalesDraftStatus('正在保存草稿…');clearTimeout(draftTimer);draftTimer=setTimeout(writeSalesDraftNow,250)}
+function clearSalesDraft(){try{localStorage.removeItem(salesDraftKey())}catch(_){}setSalesDraftStatus('已正式保存')}
 function editorDirty(){return !modal.hidden&&currentEditorState()!==editorBaseline}
 async function requestCloseEditor(){
   if(editorDirty()&&!await uiConfirm('当前修改尚未保存。已输入内容仍会保存在本机草稿中。',{title:'未保存的修改',confirmText:'仍然关闭',danger:true}))return false;
-  modal.hidden=true;return true;
+  if(editorDirty())writeSalesDraftNow();modal.hidden=true;return true;
 }
 form.addEventListener('input',saveSalesDraft);form.addEventListener('change',saveSalesDraft);
+window.addEventListener('pagehide',()=>{if(!modal.hidden)writeSalesDraftNow()});
 form.onsubmit=async e=>{
   e.preventDefault();const data={};form.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
   const completed_progress_ids=[...document.querySelectorAll('#progressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
   try{
     if(editingId){
       const oldRow=customers.find(x=>String(x.id)===String(editingId));
-      await base44.entities.Customer.update(editingId,{rep_username:username,data,completed_progress_ids});
+      await base44.entities.Customer.update(editingId,{rep_username:username,data,completed_progress_ids,search_text:makeCustomerSearchText(username,data)});
       if(oldRow)await logCustomerDiff(oldRow,data,completed_progress_ids,editingId);
     }else{
-      const created=await base44.entities.Customer.create({rep_username:username,data,completed_progress_ids,archived:false,starred:false});
+      const created=await base44.entities.Customer.create({rep_username:username,data,completed_progress_ids,archived:false,starred:false,search_text:makeCustomerSearchText(username,data)});
       const cid=created?.id||'';
       await writeSalesLog({
         action_type:'customer_create',customer_id:cid,customer_name:customerNameFromData(data),
