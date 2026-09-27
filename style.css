@@ -492,3 +492,36 @@ a{color:inherit}.topbar{height:66px;background:rgba(255,255,255,.94);backdrop-fi
 body.ui-dialog-open{overflow:hidden}
 @keyframes uiDialogIn{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
 @media(max-width:560px){.ui-dialog-card{padding:20px;border-radius:17px}.ui-dialog-actions{display:grid;grid-template-columns:1fr 1fr}.ui-dialog-actions .btn{width:100%}}
+
+/* v35 fixed customer progress badge alignment */
+.customer-name-stack{width:100%;min-width:0}
+.customer-name-line{
+  display:grid;
+  grid-template-columns:24px minmax(0,1fr) 44px;
+  align-items:center;
+  column-gap:7px;
+  width:100%;
+  min-width:0
+}
+.customer-name-line b{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap
+}
+.customer-name-line .star-btn{
+  margin:0;
+  justify-self:start
+}
+.customer-name-line .row-progress-badge{
+  margin-left:0;
+  width:44px;
+  min-width:44px;
+  box-sizing:border-box;
+  flex:none;
+  white-space:nowrap;
+  word-break:keep-all;
+  line-height:1;
+  justify-self:end
+}
