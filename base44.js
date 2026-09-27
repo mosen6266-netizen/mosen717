@@ -123,3 +123,74 @@ export function downloadCsv(filename, rows) {
   URL.revokeObjectURL(a.href);
   a.remove();
 }
+
+
+function ensureUiDialogHost(){
+  let host=document.getElementById('m717UiDialogHost');
+  if(host)return host;
+  host=document.createElement('div');
+  host.id='m717UiDialogHost';
+  host.className='ui-dialog-host';
+  host.hidden=true;
+  host.innerHTML='<div class="ui-dialog-backdrop" data-ui-dialog-backdrop></div><div class="ui-dialog-card" role="dialog" aria-modal="true"><div class="ui-dialog-icon" data-ui-dialog-icon>!</div><div class="ui-dialog-content"><div class="ui-dialog-title" data-ui-dialog-title></div><div class="ui-dialog-message" data-ui-dialog-message></div><div class="ui-dialog-input-wrap" data-ui-dialog-input-wrap hidden></div></div><div class="ui-dialog-actions"><button class="btn soft" type="button" data-ui-dialog-cancel>取消</button><button class="btn primary" type="button" data-ui-dialog-confirm>确定</button></div></div>';
+  document.body.appendChild(host);
+  return host;
+}
+function openUiDialog({title='提示',message='',confirmText='确定',cancelText='取消',showCancel=false,danger=false,input=false,textarea=false,placeholder='',value=''}={}){
+  return new Promise(resolve=>{
+    const host=ensureUiDialogHost();
+    const titleEl=host.querySelector('[data-ui-dialog-title]');
+    const msgEl=host.querySelector('[data-ui-dialog-message]');
+    const icon=host.querySelector('[data-ui-dialog-icon]');
+    const wrap=host.querySelector('[data-ui-dialog-input-wrap]');
+    const cancel=host.querySelector('[data-ui-dialog-cancel]');
+    const confirm=host.querySelector('[data-ui-dialog-confirm]');
+    titleEl.textContent=title;
+    msgEl.textContent=message;
+    cancel.textContent=cancelText;
+    confirm.textContent=confirmText;
+    cancel.hidden=!showCancel;
+    confirm.className='btn '+(danger?'danger':'primary');
+    icon.textContent=danger?'!':'✓';
+    icon.className='ui-dialog-icon '+(danger?'danger':'');
+    wrap.innerHTML='';
+    wrap.hidden=!input;
+    let editor=null;
+    if(input){
+      editor=document.createElement(textarea?'textarea':'input');
+      editor.className='ui-dialog-input';
+      editor.placeholder=placeholder;
+      editor.value=value||'';
+      if(textarea)editor.rows=4;
+      wrap.appendChild(editor);
+    }
+    host.hidden=false;
+    document.body.classList.add('ui-dialog-open');
+    const finish=result=>{
+      host.hidden=true;
+      document.body.classList.remove('ui-dialog-open');
+      confirm.onclick=null;cancel.onclick=null;
+      host.querySelector('[data-ui-dialog-backdrop]').onclick=null;
+      document.removeEventListener('keydown',onKey);
+      resolve(result);
+    };
+    const onKey=e=>{
+      if(e.key==='Escape'){e.preventDefault();finish(input?null:false)}
+      if(e.key==='Enter'&&!textarea){e.preventDefault();confirm.click()}
+    };
+    confirm.onclick=()=>finish(input?(editor?.value??''):true);
+    cancel.onclick=()=>finish(input?null:false);
+    host.querySelector('[data-ui-dialog-backdrop]').onclick=()=>finish(input?null:false);
+    document.addEventListener('keydown',onKey);
+    setTimeout(()=>{(editor||confirm).focus()},0);
+  });
+}
+export function uiAlert(message,options={}){
+  return openUiDialog({title:options.title||'提示',message,confirmText:options.confirmText||'知道了',danger:!!options.danger});
+}
+export function uiConfirm(message,options={}){
+  return openUiDialog({title:options.title||'请确认',message,confirmText:options.confirmText||'确定',cancelText:options.cancelText||'取消',showCancel:true,danger:!!options.danger});
+}
+export function uiPrompt(message,options={}){
+  return openUiDialog({title:options.title||'请输入',message,confirmText:options.confirmText||'继续',cancelText:options.cancelText||'取消',showCancel:true,danger:!!options.danger,input:true,textarea:options.textarea!==false,placeholder:options.placeholder||'',value:options.value||''});
+}
