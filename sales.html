@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-32"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-33"></head><body>
 <div class="topbar"><div class="brand-lockup"><img class="brand-logo" src="./mosen-logo.svg?v=20260926-18" alt="墨森"><div><div class="brand">墨森维权客户登记系统</div><div id="who" class="subbrand"></div></div></div><div class="row"><button id="newBtn" class="btn primary">＋ 登记客户</button><button id="logoutBtn" class="btn soft">退出</button></div></div>
 <div class="shell"><div class="stats"><div class="stat"><div id="myCount" class="n">0</div><div class="l">我的客户</div></div><div class="stat"><div id="fieldCount" class="n">0</div><div class="l">当前登记项目</div></div><div class="stat"><div id="todayCount" class="n">0</div><div class="l">今日新增</div></div></div>
 <div class="card">
@@ -34,7 +34,7 @@
 </form><div id="formNote" class="notice" hidden></div></div></div>
 
 <script type="module">
-import { base44, esc, showMessage, buildFieldControl, buildGroupedFieldControls, initDateTimeControls, formatDate } from './base44.js?v=20260927-32';
+import { base44, esc, showMessage, buildFieldControl, buildGroupedFieldControls, initDateTimeControls, formatDate, uiAlert, uiConfirm, uiPrompt } from './base44.js?v=20260927-33';
 let username=localStorage.getItem('m717_rep_username')||'',displayName=localStorage.getItem('m717_rep_display_name')||'',fields=[],customers=[],progressStages=[],editingId=null;
 const CUSTOMER_PAGE_SIZE=50;
 let customerPage=1,customerHasNext=false,myCustomerTotal=0,myArchivedTotal=0,myTodayTotal=0,customerCountTimer=null;
@@ -288,21 +288,21 @@ function customerCopyText(row){
   const p=progressLabels(row);lines.push('目前进度：'+p.current);if(row.archived)lines.push('归档原因：'+(row.archive_reason||'未填写'));
   return lines.join('\n');
 }
-async function copyCustomer(row){try{await navigator.clipboard.writeText(customerCopyText(row));alert('客户资料已复制。')}catch(_){alert('复制失败，请重试。')}}
+async function copyCustomer(row){try{await navigator.clipboard.writeText(customerCopyText(row));await uiAlert('客户资料已复制到剪贴板。',{title:'复制成功'})}catch(_){await uiAlert('复制失败，请重试。',{title:'复制失败',danger:true})}}
 async function setStar(row,value){
   await base44.entities.Customer.update(row.id,{starred:value});row.starred=value;await writeSalesLog({action_type:'customer_star',customer_id:row.id,customer_name:customerNameFromData(row.data),message:(displayName||username)+(value?' 将客户设为重点「':' 取消重点客户「')+customerNameFromData(row.data)+'」'});renderCustomers();
 }
 async function archiveSalesCustomer(row){
-  const reason=prompt('归档原因（可选）：\n例如：已完成 / 客户失联 / 暂停跟进 / 重复客户 / 其他','');
+  const reason=await uiPrompt('可填写归档原因，例如：已完成 / 客户失联 / 暂停跟进 / 重复客户 / 其他。',{title:'归档客户',placeholder:'归档原因（可选）',confirmText:'下一步'});
   if(reason===null)return;
-  if(!confirm('确定将「'+customerNameFromData(row.data)+'」移入归档吗？\n客户资料不会删除，可以随时恢复。'))return;
+  if(!await uiConfirm('确定将「'+customerNameFromData(row.data)+'」移入归档吗？\n客户资料不会删除，可以随时恢复。',{title:'确认归档',confirmText:'确认归档'}))return;
   const archived_at=new Date().toISOString();
   await base44.entities.Customer.update(row.id,{archived:true,archived_at,archived_by_username:username,archived_by_display_name:displayName||username,archived_by_type:'sales',archive_reason:reason});
   await writeSalesLog({action_type:'customer_archive',customer_id:row.id,customer_name:customerNameFromData(row.data),message:(displayName||username)+' 将客户「'+customerNameFromData(row.data)+'」归档'+(reason?'，原因：'+reason:'')});
   await loadCustomers({refreshCounts:true});
 }
 async function restoreSalesCustomer(row){
-  if(!confirm('将「'+customerNameFromData(row.data)+'」恢复到我的客户吗？'))return;
+  if(!await uiConfirm('将「'+customerNameFromData(row.data)+'」恢复到我的客户列表吗？',{title:'恢复客户',confirmText:'确认恢复'}))return;
   await base44.entities.Customer.update(row.id,{archived:false,archived_at:'',archived_by_username:'',archived_by_display_name:'',archived_by_type:'',archive_reason:''});
   await writeSalesLog({action_type:'customer_restore',customer_id:row.id,customer_name:customerNameFromData(row.data),message:(displayName||username)+' 将客户「'+customerNameFromData(row.data)+'」从归档恢复'});
   await loadCustomers({refreshCounts:true});
@@ -330,12 +330,11 @@ function saveSalesDraft(){
 }
 function clearSalesDraft(){try{localStorage.removeItem(salesDraftKey())}catch(_){}}
 function editorDirty(){return !modal.hidden&&currentEditorState()!==editorBaseline}
-function requestCloseEditor(){
-  if(editorDirty()&&!confirm('当前修改尚未保存，确定关闭吗？\n已输入内容仍会保存在本机草稿中。'))return false;
+async function requestCloseEditor(){
+  if(editorDirty()&&!await uiConfirm('当前修改尚未保存。已输入内容仍会保存在本机草稿中。',{title:'未保存的修改',confirmText:'仍然关闭',danger:true}))return false;
   modal.hidden=true;return true;
 }
 form.addEventListener('input',saveSalesDraft);form.addEventListener('change',saveSalesDraft);
-window.addEventListener('beforeunload',e=>{if(editorDirty()){e.preventDefault();e.returnValue=''}});
 form.onsubmit=async e=>{
   e.preventDefault();const data={};form.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
   const completed_progress_ids=[...document.querySelectorAll('#progressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
@@ -365,6 +364,6 @@ document.getElementById('clearSalesFilters').onclick=()=>{document.getElementByI
 ['salesStarFilter','salesProgressFilter','salesCountryFilter'].forEach(id=>document.getElementById(id).addEventListener('change',()=>loadCustomers({resetPage:true})));
 document.getElementById('salesCountryFilter').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadCustomers({resetPage:true}),450)});
 document.getElementById('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>loadCustomers({resetPage:true}),450)};
-document.getElementById('logoutBtn').onclick=()=>{if(editorDirty()&&!confirm('当前有未保存内容，确定退出吗？'))return;localStorage.removeItem('m717_rep_username');localStorage.removeItem('m717_rep_display_name');location.href='./login.html'};
+document.getElementById('logoutBtn').onclick=async()=>{if(editorDirty()&&!await uiConfirm('当前有未保存内容，退出后草稿仍保留在本机。',{title:'确认退出',confirmText:'退出登录',danger:true}))return;localStorage.removeItem('m717_rep_username');localStorage.removeItem('m717_rep_display_name');location.href='./login.html'};
 boot();
 </script></body></html>
