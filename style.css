@@ -437,3 +437,40 @@ a{color:inherit}.topbar{height:66px;background:rgba(255,255,255,.94);backdrop-fi
     padding:12px 18px 14px
   }
 }
+
+/* v32 crm archive search filters drafts stars */
+.stats{grid-template-columns:repeat(4,minmax(0,1fr))}
+.customer-view-tabs{display:flex;gap:7px;padding:5px;background:#f2f4f7;border-radius:13px;width:max-content;max-width:100%;margin-bottom:16px}
+.customer-view-tab{border:0;background:transparent;color:#667085;border-radius:9px;padding:9px 13px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
+.customer-view-tab span{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;margin-left:5px;padding:0 6px;border-radius:999px;background:#fff;color:#667085;font-size:10px}
+.customer-view-tab.active{background:#111827;color:#fff;box-shadow:0 2px 8px rgba(17,24,39,.13)}
+.customer-view-tab.active span{background:rgba(255,255,255,.17);color:#fff}
+
+.customer-toolbar{gap:10px;flex-wrap:wrap}
+.customer-filter-panel{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr)) auto;gap:10px;align-items:end;margin-top:14px;padding:14px;border:1px solid #e4e7ec;border-radius:14px;background:#f8fafc}
+.customer-filter-panel .field{min-width:0}
+.customer-filter-panel .field label{font-size:10px}
+.customer-filter-panel select,.customer-filter-panel input{background:#fff}
+
+.star-btn{width:24px;height:24px;border:0;background:transparent;color:#c7ccd4;font-size:19px;line-height:1;cursor:pointer;padding:0;display:inline-grid;place-items:center;flex:0 0 24px}
+.star-btn:hover{color:#f79009;transform:scale(1.08)}
+.star-btn.active{color:#f79009;text-shadow:0 1px 1px rgba(247,144,9,.18)}
+.starred-row{box-shadow:inset 4px 0 0 #f79009!important}
+.starred-row .customer-name-line b{font-weight:900}
+
+.archive-meta{font-size:10px;color:#667085;line-height:1.45}
+.draft-status{display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:999px;background:#ecfdf3;color:#027a48;font-size:10px;font-weight:750}
+
+@media(max-width:1100px){
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .customer-filter-panel{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .customer-filter-panel>.btn{grid-column:1/-1}
+}
+@media(max-width:680px){
+  .stats{grid-template-columns:1fr 1fr}
+  .customer-view-tabs{width:100%}
+  .customer-view-tab{flex:1}
+  .customer-filter-panel{grid-template-columns:1fr}
+  .customer-filter-panel>.btn{grid-column:auto}
+  .customer-toolbar .search{order:3;width:100%;flex-basis:100%}
+}
