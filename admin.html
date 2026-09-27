@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-34"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-33"></head><body>
 <div id="loginView" class="login-wrap"><div class="login-box"><div class="pill">管理员入口</div><h1 style="margin-top:12px">登录管理后台</h1><div class="muted">请输入管理员密码。</div><div class="field" style="margin-top:20px"><label>管理员密码</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button id="adminLogin" class="btn primary" style="width:100%;margin-top:18px">登录</button><div id="loginNote" class="notice" hidden></div></div></div>
 
 <div id="appView" hidden>
@@ -107,7 +107,7 @@
       <section id="view-logs" class="admin-view" hidden>
         <div class="card">
           <div class="row">
-            <div><h2 style="margin:0">业务员操作日志</h2><div class="small">默认显示今天 · 每页 100 条 · 日志自动保留 7 天。</div></div>
+            <div><h2 style="margin:0">业务员操作日志</h2><div class="small">默认显示今天。新增登记字段或客户进度后，日志会自动按当时的名称记录。</div></div>
             <div class="spacer"></div>
             <input id="logDate" type="date" class="search" style="min-width:160px">
             <input id="logSearch" class="search" placeholder="搜索业务员 / 客户 / 操作…">
@@ -146,7 +146,7 @@
         <div class="small" style="margin:8px 0 12px">管理员也可以直接勾选或取消客户进度。</div>
         <div id="adminProgressChecklist" class="progress-checklist"></div>
       </div>
-      <div class="row customer-edit-save-bar"><span id="adminDraftStatus" class="draft-status">草稿保护已开启</span><div class="spacer"></div><button class="btn primary" type="submit">保存修改</button><button id="cancelCustomerEdit" class="btn soft" type="button">取消</button></div>
+      <div class="row customer-edit-save-bar"><button class="btn primary" type="submit">保存修改</button><button id="cancelCustomerEdit" class="btn soft" type="button">取消</button></div>
     </form>
     <div id="customerEditNote" class="notice" hidden></div>
   </div>
@@ -202,52 +202,17 @@
 </div>
 
 <script type="module">
-import { base44, esc, showMessage, buildFieldControl, buildGroupedFieldControls, initDateTimeControls, formatDate, downloadCsv, uiAlert, uiConfirm, uiPrompt } from './base44.js?v=20260927-34';
+import { base44, esc, showMessage, buildFieldControl, buildGroupedFieldControls, initDateTimeControls, formatDate, downloadCsv, uiAlert, uiConfirm, uiPrompt } from './base44.js?v=20260927-33';
 const ADMIN_HASH='78fd5f1e5a3f6eef05ab8d692942fd0ff4a8f4cc0e6087026626006a7fae452d';
 let reps=[],fields=[],customers=[],progressStages=[],editingCustomerId=null,draggedFieldId=null,dragSaving=false,draggedProgressId=null,progressDragSaving=false,editingFieldTypeId=null;
 let currentView='all',currentRepFilter='';
-const CUSTOMER_PAGE_SIZE=50,LOG_PAGE_SIZE=100;
-let customerPage=1,customerHasNext=false,totalCustomerCount=0,totalArchivedCount=0,customerCountByRep={},archivedCountByRep={},customerCountTimer=null,searchTimer=null,adminEditorBaseline='',adminDraftTimer=null,lastCustomerCountRefresh=0;
-let logPage=1,logHasNext=false,logRefreshTimer=null,retentionRunning=false;
+const CUSTOMER_PAGE_SIZE=50;
+let customerPage=1,customerHasNext=false,totalCustomerCount=0,totalArchivedCount=0,customerCountByRep={},archivedCountByRep={},customerCountTimer=null,globalCustomerRows=null,searchTimer=null,adminEditorBaseline='',adminDraftTimer=null;
 
 const loginView=document.getElementById('loginView'),appView=document.getElementById('appView'),loginNote=document.getElementById('loginNote');
 const customerModal=document.getElementById('customerModal'),customerEditForm=document.getElementById('customerEditForm'),customerEditNote=document.getElementById('customerEditNote');
 
 function unwrap(v){return Array.isArray(v)?v:(v?.items||[])}
-function makeCustomerSearchText(repUsername='',data={}){return (String(repUsername||'')+' '+JSON.stringify(data||{})).toLowerCase()}
-function escapeSearchRegex(value=''){const specials='\\^$.*+?()[]{}|';return [...String(value)].map(ch=>specials.includes(ch)?'\\'+ch:ch).join('')}
-function stableData(data={}){const out={};Object.keys(data||{}).sort().forEach(k=>out[k]=data[k]);return out}
-function archiveDeleteDate(row){if(!row?.archived_at)return '';const d=new Date(row.archived_at);if(Number.isNaN(d.getTime()))return '';d.setDate(d.getDate()+30);return formatDate(d.toISOString())}
-async function ensureCustomerSearchIndex(){
-  for(let round=0;round<20;round++){
-    const batch=unwrap(await base44.entities.Customer.filter({$or:[{search_text:{$exists:false}},{search_text:''}]},'created_date',50,0));
-    if(!batch.length)break;
-    for(let i=0;i<batch.length;i+=10)await Promise.all(batch.slice(i,i+10).map(row=>base44.entities.Customer.update(row.id,{search_text:makeCustomerSearchText(row.rep_username,row.data)}).catch(()=>null)));
-    if(batch.length<50)break;
-  }
-}
-async function deleteExpiredRows(entityName,query){
-  while(true){
-    const rows=unwrap(await base44.entities[entityName].filter(query,'created_date',100,0));
-    if(!rows.length)break;
-    for(let i=0;i<rows.length;i+=10)await Promise.all(rows.slice(i,i+10).map(row=>base44.entities[entityName].delete(row.id)));
-    if(rows.length<100)break;
-  }
-}
-async function runRetentionCleanup(force=false){
-  if(retentionRunning)return;
-  const last=Number(localStorage.getItem('m717_retention_last')||0);
-  if(!force&&Date.now()-last<6*60*60*1000)return;
-  retentionRunning=true;
-  try{
-    const logCutoff=new Date(Date.now()-7*24*60*60*1000).toISOString();
-    await deleteExpiredRows('ActivityLog',{$or:[{event_time:{$lt:logCutoff}},{event_time:{$exists:false},created_date:{$lt:logCutoff}}]});
-    const archiveCutoff=new Date(Date.now()-30*24*60*60*1000).toISOString();
-    await deleteExpiredRows('Customer',{archived:true,archived_at:{$lt:archiveCutoff}});
-    localStorage.setItem('m717_retention_last',String(Date.now()));
-  }catch(_){}
-  finally{retentionRunning=false}
-}
 async function sha256(v){const b=new TextEncoder().encode(v);const h=await crypto.subtle.digest('SHA-256',b);return [...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('')}
 
 function showAdminView(view,repUsername=''){
@@ -292,18 +257,14 @@ document.querySelector('.sidebar-item[data-view="backup"]').onclick=()=>showAdmi
 async function enter(){
   loginView.hidden=true;appView.hidden=false;
   document.getElementById('logDate').value=new Date().toISOString().slice(0,10);
-  cleanupAdminDrafts();
-  await runRetentionCleanup();
-  await ensureCustomerSearchIndex();
-  await Promise.all([loadReps(),loadFields(),loadProgress(),loadLogs({resetPage:true}),refreshCustomerCounts()]);
+  await Promise.all([loadReps(),loadFields(),loadProgress(),loadLogs(),refreshCustomerCounts()]);
   showAdminView('all');
-  setInterval(()=>runRetentionCleanup().catch(()=>{}),6*60*60*1000);
   try{
     base44.entities.SalesRep.subscribe(()=>loadReps());
     base44.entities.FormField.subscribe(()=>{if(!dragSaving){loadFields();loadCustomers()}});
     base44.entities.ProgressStage.subscribe(()=>{if(!progressDragSaving){loadProgress();loadCustomers()}});
     base44.entities.Customer.subscribe(()=>{loadCustomers();scheduleCustomerCountRefresh()});
-    base44.entities.ActivityLog.subscribe(()=>scheduleLogRefresh());
+    base44.entities.ActivityLog.subscribe(()=>loadLogs());
   }catch(_){}
 }
 document.getElementById('adminLogin').onclick=async()=>{
@@ -579,8 +540,7 @@ function attachAdminPreviewEditor(portal,row){
     const rep_username=portal.querySelector('[data-preview-rep]')?.value||'';
     btn.disabled=true;showMessage(note,'正在保存…');
     try{
-      await base44.entities.Customer.update(row.id,{rep_username,data,completed_progress_ids,search_text:makeCustomerSearchText(rep_username,data)});
-      await logAdminCustomerDiff(row,data,completed_progress_ids,rep_username,row.id);
+      await base44.entities.Customer.update(row.id,{rep_username,data,completed_progress_ids});
       row.rep_username=rep_username;row.data=data;row.completed_progress_ids=completed_progress_ids;
       showMessage(note,'已保存并同步。','ok');
       await loadCustomers();
@@ -632,41 +592,18 @@ function localLogTime(value){
   const d=new Date(value);if(Number.isNaN(d.getTime()))return String(value).replace('T',' ').slice(0,16);
   return d.toLocaleString('zh-CN',{hour12:false,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'});
 }
-function selectedLogRange(){
-  const value=document.getElementById('logDate')?.value||'';
-  const start=value?new Date(value+'T00:00:00'):new Date();
-  if(!value)start.setHours(0,0,0,0);
-  const end=new Date(start);end.setDate(end.getDate()+1);
-  return {start:start.toISOString(),end:end.toISOString()};
-}
-function buildLogQuery(){
-  const range=selectedLogRange(),query={event_time:{$gte:range.start,$lt:range.end}};
-  const q=(document.getElementById('logSearch')?.value||'').trim();
-  if(q){
-    const rx={$regex:escapeSearchRegex(q),$options:'i'};
-    query.$or=[{actor_display_name:rx},{actor_username:rx},{customer_name:rx},{message:rx},{target_label:rx}];
-  }
-  return query;
-}
-function logPagerHtml(){
-  return '<div class="customer-pager"><div class="customer-pager-info">第 <b>'+logPage+'</b> 页 · 每页 '+LOG_PAGE_SIZE+' 条 · 仅保留最近 7 天</div><div class="customer-pager-actions"><button id="logPrevPage" class="btn soft" '+(logPage<=1?'disabled':'')+'>上一页</button><button id="logNextPage" class="btn soft" '+(!logHasNext?'disabled':'')+'>下一页</button></div></div>';
-}
-function bindLogPager(){
-  const p=document.getElementById('logPrevPage'),n=document.getElementById('logNextPage');
-  if(p)p.onclick=()=>{if(logPage>1){logPage--;loadLogs()}};
-  if(n)n.onclick=()=>{if(logHasNext){logPage++;loadLogs()}};
-}
-function scheduleLogRefresh(){clearTimeout(logRefreshTimer);logRefreshTimer=setTimeout(()=>loadLogs().catch(()=>{}),800)}
-async function loadLogs({resetPage=false}={}){
-  const box=document.getElementById('logList');if(!box)return;if(resetPage)logPage=1;
+let activityLogs=[];
+async function loadLogs(){
+  const box=document.getElementById('logList');if(!box)return;
   try{
-    const skip=(logPage-1)*LOG_PAGE_SIZE;
-    const all=unwrap(await base44.entities.ActivityLog.filter(buildLogQuery(),'-event_time',LOG_PAGE_SIZE+1,skip));
-    logHasNext=all.length>LOG_PAGE_SIZE;const rows=all.slice(0,LOG_PAGE_SIZE);
-    document.getElementById('sidebarLogCount').textContent=logHasNext?(LOG_PAGE_SIZE+'+'):String(rows.length);
-    if(!rows.length){box.innerHTML='<div class="empty">这一天暂无匹配日志</div>'+logPagerHtml();bindLogPager();return}
-    box.innerHTML='<div class="activity-list">'+rows.map(x=>'<div class="activity-item"><div class="activity-time">'+esc(localLogTime(x.event_time||x.created_date))+'</div><div class="activity-body"><div class="activity-title">'+esc(x.message||'')+'</div><div class="activity-meta">'+esc(x.actor_display_name||x.actor_username||'未知业务员')+(x.customer_name?' · '+esc(x.customer_name):'')+(x.target_label?' · '+esc(x.target_label):'')+'</div></div></div>').join('')+'</div>'+logPagerHtml();
-    bindLogPager();
+    activityLogs=unwrap(await base44.entities.ActivityLog.list({sort:'-created_date',limit:1000}));
+    const date=document.getElementById('logDate')?.value||new Date().toISOString().slice(0,10);
+    const q=(document.getElementById('logSearch')?.value||'').trim().toLowerCase();
+    const todayRows=activityLogs.filter(x=>localLogDate(x.event_time||x.created_date)===date);
+    document.getElementById('sidebarLogCount').textContent=todayRows.length;
+    const rows=todayRows.filter(x=>(String(x.actor_display_name||'')+' '+String(x.actor_username||'')+' '+String(x.customer_name||'')+' '+String(x.message||'')).toLowerCase().includes(q));
+    if(!rows.length){box.innerHTML='<div class="empty">这一天暂无匹配日志</div>';return}
+    box.innerHTML='<div class="activity-list">'+rows.map(x=>'<div class="activity-item"><div class="activity-time">'+esc(localLogTime(x.event_time||x.created_date))+'</div><div class="activity-body"><div class="activity-title">'+esc(x.message||'')+'</div><div class="activity-meta">'+esc(x.actor_display_name||x.actor_username||'未知业务员')+(x.customer_name?' · '+esc(x.customer_name):'')+(x.target_label?' · '+esc(x.target_label):'')+'</div></div></div>').join('')+'</div>';
   }catch(err){box.innerHTML='<div class="notice err">读取日志失败：'+esc(err?.message||String(err))+'</div>'}
 }
 async function getAllEntityRecords(entityName){
@@ -864,29 +801,38 @@ async function fetchAllAdminCustomers(query){
   return all;
 }
 function adminBaseQuery(){
-  const query={archived:currentView==='archive'};
-  if(currentView==='rep'&&currentRepFilter)query.rep_username=currentRepFilter;
+  const q={archived:currentView==='archive'};
+  if(currentView==='rep'&&currentRepFilter)q.rep_username=currentRepFilter;
   const chosen=document.getElementById('adminRepFilter')?.value||'';
-  if(currentView!=='rep'&&chosen)query.rep_username=chosen;
-  const star=document.getElementById('adminStarFilter')?.value||'';
-  if(star)query.starred=star==='1';
-  const progress=document.getElementById('adminProgressFilter')?.value||'';
-  if(progress)query.completed_progress_ids=progress;
-  const terms=[];
-  const text=(document.getElementById('customerSearch')?.value||'').trim();
-  const country=(document.getElementById('adminCountryFilter')?.value||'').trim();
-  if(text)terms.push({search_text:{$regex:escapeSearchRegex(text),$options:'i'}});
-  if(country)terms.push({search_text:{$regex:escapeSearchRegex(country),$options:'i'}});
-  if(terms.length)query.$and=terms;
-  return query;
+  if(currentView!=='rep'&&chosen)q.rep_username=chosen;
+  return q;
 }
 function adminFilterActive(){
   return !!((document.getElementById('customerSearch')?.value||'').trim()||(document.getElementById('adminStarFilter')?.value||'')||(document.getElementById('adminProgressFilter')?.value||'')||(document.getElementById('adminCountryFilter')?.value||'').trim()||(currentView!=='rep'&&(document.getElementById('adminRepFilter')?.value||'')));
 }
+function matchesAdminFilters(r){
+  const q=(document.getElementById('customerSearch')?.value||'').trim().toLowerCase();
+  const star=document.getElementById('adminStarFilter')?.value||'';
+  const progress=document.getElementById('adminProgressFilter')?.value||'';
+  const country=(document.getElementById('adminCountryFilter')?.value||'').trim().toLowerCase();
+  const hay=(String(r.rep_username||'')+' '+JSON.stringify(r.data||{})).toLowerCase();
+  if(q&&!hay.includes(q))return false;
+  if(star==='1'&&r.starred!==true)return false;
+  if(star==='0'&&r.starred===true)return false;
+  if(progress&&!(r.completed_progress_ids||[]).map(String).includes(String(progress)))return false;
+  if(country&&!hay.includes(country))return false;
+  return true;
+}
 async function fetchCustomerPage(){
-  const skip=(customerPage-1)*CUSTOMER_PAGE_SIZE;
-  const rows=unwrap(await base44.entities.Customer.filter(adminBaseQuery(),'-created_date',CUSTOMER_PAGE_SIZE+1,skip));
-  customerHasNext=rows.length>CUSTOMER_PAGE_SIZE;customers=rows.slice(0,CUSTOMER_PAGE_SIZE);
+  if(adminFilterActive()){
+    globalCustomerRows=(await fetchAllAdminCustomers(adminBaseQuery())).filter(matchesAdminFilters);
+    const start=(customerPage-1)*CUSTOMER_PAGE_SIZE;
+    customers=globalCustomerRows.slice(start,start+CUSTOMER_PAGE_SIZE);customerHasNext=start+CUSTOMER_PAGE_SIZE<globalCustomerRows.length;
+  }else{
+    globalCustomerRows=null;const skip=(customerPage-1)*CUSTOMER_PAGE_SIZE;
+    const rows=unwrap(await base44.entities.Customer.filter(adminBaseQuery(),'-created_date',CUSTOMER_PAGE_SIZE+1,skip));
+    customerHasNext=rows.length>CUSTOMER_PAGE_SIZE;customers=rows.slice(0,CUSTOMER_PAGE_SIZE);
+  }
   if(!customers.length&&customerPage>1){customerPage--;return fetchCustomerPage()}
 }
 async function refreshCustomerCounts(){
@@ -894,16 +840,12 @@ async function refreshCustomerCounts(){
   while(true){const batch=unwrap(await base44.entities.Customer.list('-created_date',500,skip));all.push(...batch);if(batch.length<500)break;skip+=500}
   let active=0,archived=0,counts={},archiveCounts={};
   for(const row of all){const key=String(row.rep_username||'');if(row.archived===true){archived++;archiveCounts[key]=(archiveCounts[key]||0)+1}else{active++;counts[key]=(counts[key]||0)+1}}
-  totalCustomerCount=active;totalArchivedCount=archived;customerCountByRep=counts;archivedCountByRep=archiveCounts;lastCustomerCountRefresh=Date.now();
+  totalCustomerCount=active;totalArchivedCount=archived;customerCountByRep=counts;archivedCountByRep=archiveCounts;
   document.getElementById('totalCustomers').textContent=active;document.getElementById('allCustomerCount').textContent=active;
   document.getElementById('archivedCustomerCount').textContent=archived;document.getElementById('archivedCustomersStat').textContent=archived;
   renderSidebar();renderReps();
 }
-function scheduleCustomerCountRefresh(){
-  if(customerCountTimer)return;
-  const wait=Math.max(0,30000-(Date.now()-lastCustomerCountRefresh));
-  customerCountTimer=setTimeout(async()=>{customerCountTimer=null;await refreshCustomerCounts().catch(()=>{})},wait);
-}
+function scheduleCustomerCountRefresh(){clearTimeout(customerCountTimer);customerCountTimer=setTimeout(()=>refreshCustomerCounts().catch(()=>{}),1000)}
 async function loadCustomers({resetPage=false,refreshCounts=false}={}){
   if(resetPage)customerPage=1;
   try{await fetchCustomerPage();renderCustomers();if(refreshCounts)await refreshCustomerCounts()}
@@ -911,9 +853,8 @@ async function loadCustomers({resetPage=false,refreshCounts=false}={}){
 }
 function getVisibleCustomers(){return customers}
 function adminPagerHtml(){
-  const filtered=adminFilterActive();
-  const total=currentView==='archive'?totalArchivedCount:(currentView==='rep'?(customerCountByRep[currentRepFilter]||0):totalCustomerCount);
-  return '<div class="customer-pager"><div class="customer-pager-info">第 <b>'+customerPage+'</b> 页 · 每页 '+CUSTOMER_PAGE_SIZE+' 条'+(filtered?' · 后端筛选结果':' · 共 '+total+' 条')+'</div><div class="customer-pager-actions"><button id="adminPrevPage" class="btn soft" '+(customerPage<=1?'disabled':'')+'>上一页</button><button id="adminNextPage" class="btn soft" '+(!customerHasNext?'disabled':'')+'>下一页</button></div></div>';
+  const total=globalCustomerRows?globalCustomerRows.length:(currentView==='archive'?totalArchivedCount:(currentView==='rep'?(customerCountByRep[currentRepFilter]||0):totalCustomerCount));
+  return '<div class="customer-pager"><div class="customer-pager-info">第 <b>'+customerPage+'</b> 页 · 每页 '+CUSTOMER_PAGE_SIZE+' 条 · 共 '+total+' 条</div><div class="customer-pager-actions"><button id="adminPrevPage" class="btn soft" '+(customerPage<=1?'disabled':'')+'>上一页</button><button id="adminNextPage" class="btn soft" '+(!customerHasNext?'disabled':'')+'>下一页</button></div></div>';
 }
 function bindAdminPager(){const prev=document.getElementById('adminPrevPage'),next=document.getElementById('adminNextPage');if(prev)prev.onclick=async()=>{if(customerPage<=1)return;customerPage--;await loadCustomers()};if(next)next.onclick=async()=>{if(!customerHasNext)return;customerPage++;await loadCustomers()}}
 function fixedCustomerValue(row,key){return row.data?.[key]??''}
@@ -931,22 +872,6 @@ function repDisplayName(username){
 }
 async function writeAdminLog(payload){
   try{await base44.entities.ActivityLog.create({actor_username:'admin',actor_display_name:'管理员',actor_type:'admin',action_type:payload.action_type||'update',customer_id:payload.customer_id||'',customer_name:payload.customer_name||'',target_key:payload.target_key||'',target_label:payload.target_label||'',old_value:payload.old_value==null?'':String(payload.old_value),new_value:payload.new_value==null?'':String(payload.new_value),message:payload.message||'',event_time:new Date().toISOString(),metadata:payload.metadata||{}})}catch(_){}
-}
-async function logAdminCustomerDiff(oldRow,newData,newProgress,newRep,customerId){
-  if(!oldRow)return;
-  const fieldChanges=[];
-  for(const field of fields){
-    const before=oldRow.data?.[field.field_key]??'',after=newData?.[field.field_key]??'';
-    if(String(before)!==String(after))fieldChanges.push({key:field.field_key,label:field.label,before,after});
-  }
-  const oldSet=new Set((oldRow.completed_progress_ids||[]).map(String)),newSet=new Set((newProgress||[]).map(String));
-  const progressChanges=[];
-  for(const p of progressStages){const id=String(p.id);if(oldSet.has(id)!==newSet.has(id))progressChanges.push({id,label:p.label,before:oldSet.has(id),after:newSet.has(id)})}
-  const repChanged=String(oldRow.rep_username||'')!==String(newRep||'');
-  if(!fieldChanges.length&&!progressChanges.length&&!repChanged)return;
-  const parts=[];if(fieldChanges.length)parts.push(fieldChanges.length+'项资料');if(progressChanges.length)parts.push(progressChanges.length+'项进度');if(repChanged)parts.push('业务员归属');
-  const name=newData?.f_customer_name||oldRow.data?.f_customer_name||'未命名客户';
-  await writeAdminLog({action_type:'customer_update',customer_id:customerId,customer_name:name,message:'管理员修改了「'+name+'」的'+parts.join('、'),metadata:{field_changes:fieldChanges,progress_changes:progressChanges,rep_before:oldRow.rep_username||'',rep_after:newRep||''}});
 }
 function adminCustomerCopyText(row){
   const lines=['客户姓名：'+(fixedCustomerValue(row,'f_customer_name')||''),'业务员：'+repDisplayName(row.rep_username)];
@@ -971,7 +896,7 @@ function renderCustomers(){
   if(!rows.length){box.innerHTML='<div class="empty">'+(currentView==='archive'?'暂无归档客户':'暂无匹配客户')+'</div>'+adminPagerHtml();bindAdminPager();return}
   const eye='<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="2.8" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
   const archived=currentView==='archive';
-  box.innerHTML='<div class="table-wrap customer-table fixed-customer-table"><table><thead><tr><th>转主号时间</th><th>客户姓名</th><th>手机号</th><th>邮箱</th><th>损失金额</th><th>目前进度</th><th>'+(archived?'归档信息':'下一步')+'</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r),pl=progressLabels(r),archiveInfo=r.archived?((r.archive_reason||'未填写原因')+' · 归档 '+(formatDate(r.archived_at)||'')+(archiveDeleteDate(r)?' · 自动删除 '+archiveDeleteDate(r):'')):pl.next;return '<tr class="customer-progress-row '+(r.starred?'starred-row':'')+'" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td data-label="转主号时间">'+esc(formatDate(fixedCustomerValue(r,'f_transfer_main_time'))||'—')+'</td><td data-label="客户姓名"><div class="customer-name-stack"><div class="customer-name-line"><button class="star-btn '+(r.starred?'active':'')+'" data-id="'+r.id+'" type="button">★</button><b>'+esc(fixedCustomerValue(r,'f_customer_name')||'—')+'</b><span class="row-progress-badge">'+s.percent+'%</span></div><div class="customer-owner-line">业务员：'+esc(repDisplayName(r.rep_username))+'</div></div></td><td data-label="手机号">'+esc(fixedCustomerValue(r,'f_phone')||'—')+'</td><td data-label="邮箱">'+esc(fixedCustomerValue(r,'f_email')||'—')+'</td><td data-label="损失金额">'+esc(fixedCustomerValue(r,'f_loss_amount')||'—')+'</td><td data-label="目前进度"><span class="current-progress-text" style="color:'+s.solid+'">'+esc(pl.current)+'</span></td><td data-label="'+(archived?'归档信息':'下一步')+'">'+esc(archiveInfo||'—')+'</td><td data-label="操作"><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button">'+eye+'</button></span><button class="btn soft copycustomer" data-id="'+r.id+'">复制</button>'+(archived?'<button class="btn soft restorecustomer" data-id="'+r.id+'">恢复</button><button class="btn danger delcustomer" data-id="'+r.id+'">永久删除</button>':'<button class="btn soft editcustomer" data-id="'+r.id+'">编辑</button><button class="btn soft archivecustomer" data-id="'+r.id+'">归档</button>')+'</div></td></tr>'}).join('')+'</tbody></table></div>'+adminPagerHtml();
+  box.innerHTML='<div class="table-wrap customer-table fixed-customer-table"><table><thead><tr><th>转主号时间</th><th>客户姓名</th><th>手机号</th><th>邮箱</th><th>损失金额</th><th>目前进度</th><th>'+(archived?'归档信息':'下一步')+'</th><th>操作</th></tr></thead><tbody>'+rows.map(r=>{const s=progressStats(r),pl=progressLabels(r),archiveInfo=r.archived?((r.archive_reason||'未填写原因')+' · '+(formatDate(r.archived_at)||'')):pl.next;return '<tr class="customer-progress-row '+(r.starred?'starred-row':'')+'" style="--row-progress:'+s.percent+'%;--row-fill:'+s.fill+';--row-solid:'+s.solid+'"><td data-label="转主号时间">'+esc(formatDate(fixedCustomerValue(r,'f_transfer_main_time'))||'—')+'</td><td data-label="客户姓名"><div class="customer-name-stack"><div class="customer-name-line"><button class="star-btn '+(r.starred?'active':'')+'" data-id="'+r.id+'" type="button">★</button><b>'+esc(fixedCustomerValue(r,'f_customer_name')||'—')+'</b><span class="row-progress-badge">'+s.percent+'%</span></div><div class="customer-owner-line">业务员：'+esc(repDisplayName(r.rep_username))+'</div></div></td><td data-label="手机号">'+esc(fixedCustomerValue(r,'f_phone')||'—')+'</td><td data-label="邮箱">'+esc(fixedCustomerValue(r,'f_email')||'—')+'</td><td data-label="损失金额">'+esc(fixedCustomerValue(r,'f_loss_amount')||'—')+'</td><td data-label="目前进度"><span class="current-progress-text" style="color:'+s.solid+'">'+esc(pl.current)+'</span></td><td data-label="'+(archived?'归档信息':'下一步')+'">'+esc(archiveInfo||'—')+'</td><td data-label="操作"><div class="row nowrap"><span class="preview-wrap" data-id="'+r.id+'"><button class="eye-btn" type="button">'+eye+'</button></span><button class="btn soft copycustomer" data-id="'+r.id+'">复制</button>'+(archived?'<button class="btn soft restorecustomer" data-id="'+r.id+'">恢复</button><button class="btn danger delcustomer" data-id="'+r.id+'">永久删除</button>':'<button class="btn soft editcustomer" data-id="'+r.id+'">编辑</button><button class="btn soft archivecustomer" data-id="'+r.id+'">归档</button>')+'</div></td></tr>'}).join('')+'</tbody></table></div>'+adminPagerHtml();
   bindPreviewHover(box);bindAdminPager();
   box.querySelectorAll('.editcustomer').forEach(b=>b.onclick=()=>openCustomerEditor(customers.find(x=>x.id===b.dataset.id)));
   box.querySelectorAll('.copycustomer').forEach(b=>b.onclick=()=>copyAdminCustomer(customers.find(x=>x.id===b.dataset.id)));
@@ -983,25 +908,14 @@ function renderCustomers(){
 function adminCurrentEditorState(){
   const data={};customerEditForm.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
   const completed_progress_ids=[...document.querySelectorAll('#adminProgressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId).sort();
-  return JSON.stringify({data:stableData(data),completed_progress_ids,rep_username:document.getElementById('editRep').value});
+  return JSON.stringify({data,completed_progress_ids,rep_username:document.getElementById('editRep').value});
 }
 function adminDraftKey(){return 'm717_draft_admin_'+(editingCustomerId||'none')}
-function setAdminDraftStatus(text){const el=document.getElementById('adminDraftStatus');if(el)el.textContent=text}
-function cleanupAdminDrafts(){
-  const prefix='m717_draft_admin_',now=Date.now(),items=[];
-  for(let i=0;i<localStorage.length;i++){const key=localStorage.key(i);if(!key?.startsWith(prefix))continue;try{const obj=JSON.parse(localStorage.getItem(key)||'{}');const saved=Number(obj.saved_at||0);if(saved&&now-saved>30*24*60*60*1000){localStorage.removeItem(key);continue}items.push({key,saved})}catch(_){}}
-  items.sort((a,b)=>b.saved-a.saved);items.slice(100).forEach(x=>localStorage.removeItem(x.key));
-}
-function writeAdminDraftNow(){
-  if(customerModal.hidden)return;
-  try{localStorage.setItem(adminDraftKey(),JSON.stringify({saved_at:Date.now(),state:JSON.parse(adminCurrentEditorState())}));const t=new Date();setAdminDraftStatus('草稿已保存 '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0'))}catch(_){setAdminDraftStatus('草稿保存空间已满')}
-}
-function saveAdminDraft(){if(customerModal.hidden)return;setAdminDraftStatus('正在保存草稿…');clearTimeout(adminDraftTimer);adminDraftTimer=setTimeout(writeAdminDraftNow,250)}
-function clearAdminDraft(){try{localStorage.removeItem(adminDraftKey())}catch(_){}setAdminDraftStatus('已正式保存')}
+function saveAdminDraft(){if(customerModal.hidden)return;clearTimeout(adminDraftTimer);adminDraftTimer=setTimeout(()=>{try{localStorage.setItem(adminDraftKey(),adminCurrentEditorState())}catch(_){}},250)}
+function clearAdminDraft(){try{localStorage.removeItem(adminDraftKey())}catch(_){}}
 function adminEditorDirty(){return !customerModal.hidden&&adminCurrentEditorState()!==adminEditorBaseline}
-async function requestCloseAdminEditor(){if(adminEditorDirty()&&!await uiConfirm('当前修改尚未保存。已输入内容仍会保存在本机草稿中。',{title:'未保存的修改',confirmText:'仍然关闭',danger:true}))return false;if(adminEditorDirty())writeAdminDraftNow();customerModal.hidden=true;return true}
+async function requestCloseAdminEditor(){if(adminEditorDirty()&&!await uiConfirm('当前修改尚未保存。已输入内容仍会保存在本机草稿中。',{title:'未保存的修改',confirmText:'仍然关闭',danger:true}))return false;customerModal.hidden=true;return true}
 customerEditForm.addEventListener('input',saveAdminDraft);customerEditForm.addEventListener('change',saveAdminDraft);document.getElementById('editRep').addEventListener('change',saveAdminDraft);
-window.addEventListener('pagehide',()=>{if(!customerModal.hidden)writeAdminDraftNow()});
 function openCustomerEditor(row){
   if(!row)return;editingCustomerId=row.id;
   const active=fields.filter(f=>f.active!==false).sort((a,b)=>(a.order||0)-(b.order||0));
@@ -1010,18 +924,14 @@ function openCustomerEditor(row){
   initDateTimeControls(document.getElementById('customerEditFields'));
   renderAdminProgressChecklist(row.completed_progress_ids||[]);
   customerEditNote.hidden=true;customerModal.hidden=false;
-  adminEditorBaseline=JSON.stringify({data:stableData(row.data||{}),completed_progress_ids:(row.completed_progress_ids||[]).map(String).sort(),rep_username:row.rep_username||''});
-  setAdminDraftStatus('草稿保护已开启');
-  try{const raw=localStorage.getItem(adminDraftKey());if(raw){const obj=JSON.parse(raw),d=obj.state||obj;if(d?.data){document.getElementById('customerEditFields').innerHTML=buildGroupedFieldControls(active,d.data);initDateTimeControls(document.getElementById('customerEditFields'));document.getElementById('editRep').value=d.rep_username||row.rep_username||'';renderAdminProgressChecklist(d.completed_progress_ids||[]);showMessage(customerEditNote,'已恢复上次未保存的草稿。','ok');if(obj.saved_at){const t=new Date(obj.saved_at);setAdminDraftStatus('已恢复草稿 '+String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0'))}}}}catch(_){}
+  adminEditorBaseline=JSON.stringify({data:row.data||{},completed_progress_ids:(row.completed_progress_ids||[]).map(String).sort(),rep_username:row.rep_username||''});
+  try{const raw=localStorage.getItem(adminDraftKey());if(raw){const d=JSON.parse(raw);if(d?.data){document.getElementById('customerEditFields').innerHTML=buildGroupedFieldControls(active,d.data);initDateTimeControls(document.getElementById('customerEditFields'));document.getElementById('editRep').value=d.rep_username||row.rep_username||'';renderAdminProgressChecklist(d.completed_progress_ids||[]);showMessage(customerEditNote,'已恢复上次未保存的草稿。','ok')}}}catch(_){}
 }
 customerEditForm.onsubmit=async e=>{
   e.preventDefault();const row=customers.find(x=>x.id===editingCustomerId);if(!row)return;
   const data={...(row.data||{})};customerEditForm.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
   try{const completed_progress_ids=[...document.querySelectorAll('#adminProgressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
-    const newRep=document.getElementById('editRep').value;
-    await base44.entities.Customer.update(row.id,{rep_username:newRep,data,completed_progress_ids,search_text:makeCustomerSearchText(newRep,data)});
-    await logAdminCustomerDiff(row,data,completed_progress_ids,newRep,row.id);
-    clearAdminDraft();adminEditorBaseline=adminCurrentEditorState();showMessage(customerEditNote,'客户资料已更新。','ok');await loadCustomers();setTimeout(()=>customerModal.hidden=true,350)}
+    await base44.entities.Customer.update(row.id,{rep_username:document.getElementById('editRep').value,data,completed_progress_ids});clearAdminDraft();adminEditorBaseline=adminCurrentEditorState();showMessage(customerEditNote,'客户资料已更新。','ok');await loadCustomers();setTimeout(()=>customerModal.hidden=true,350)}
   catch(err){showMessage(customerEditNote,'保存失败：'+(err?.message||String(err)),'err')}
 };
 
@@ -1040,9 +950,9 @@ document.getElementById('adminCountryFilter').addEventListener('input',()=>{clea
 document.getElementById('refreshCustomers').onclick=async()=>{await loadCustomers();await refreshCustomerCounts()};
 document.getElementById('refreshReps').onclick=loadReps;
 document.getElementById('closeCustomerModal').onclick=requestCloseAdminEditor;document.getElementById('cancelCustomerEdit').onclick=requestCloseAdminEditor;
-document.getElementById('logDate').onchange=()=>loadLogs({resetPage:true});
-document.getElementById('logSearch').oninput=()=>{clearTimeout(logRefreshTimer);logRefreshTimer=setTimeout(()=>loadLogs({resetPage:true}),400)};
-document.getElementById('refreshLogs').onclick=()=>loadLogs({resetPage:true});
+document.getElementById('logDate').onchange=loadLogs;
+document.getElementById('logSearch').oninput=loadLogs;
+document.getElementById('refreshLogs').onclick=loadLogs;
 document.getElementById('exportBackup').onclick=exportFullBackup;
 document.getElementById('importBackup').onclick=()=>document.getElementById('backupFile').click();
 document.getElementById('backupFile').onchange=async e=>{const file=e.target.files?.[0];if(file)await importFullBackup(file);e.target.value=''};
