@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-35"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 管理员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-36"></head><body>
 <div id="loginView" class="login-wrap"><div class="login-box"><div class="pill">管理员入口</div><h1 style="margin-top:12px">登录管理后台</h1><div class="muted">请输入管理员密码。</div><div class="field" style="margin-top:20px"><label>管理员密码</label><input id="adminPassword" type="password" autocomplete="current-password" placeholder="请输入密码"></div><button id="adminLogin" class="btn primary" style="width:100%;margin-top:18px">登录</button><div id="loginNote" class="notice" hidden></div></div></div>
 
 <div id="appView" hidden>
@@ -540,7 +540,7 @@ function attachAdminPreviewEditor(portal,row){
     const rep_username=portal.querySelector('[data-preview-rep]')?.value||'';
     btn.disabled=true;showMessage(note,'正在保存…');
     try{
-      await base44.entities.Customer.update(row.id,{rep_username,data,completed_progress_ids});
+      await base44.entities.Customer.update(row.id,{rep_username,data,completed_progress_ids,admin_sort_score:completed_progress_ids.length});
       row.rep_username=rep_username;row.data=data;row.completed_progress_ids=completed_progress_ids;
       showMessage(note,'已保存并同步。','ok');
       await loadCustomers();
@@ -620,7 +620,7 @@ function stripRecord(entityName,row){
   if(entityName==='SalesRep')copy(['username','display_name']);
   if(entityName==='FormField')copy(['label','field_key','field_type','options','required','order','active','group_name']);
   if(entityName==='ProgressStage')copy(['label','order','active']);
-  if(entityName==='Customer')copy(['rep_username','data','completed_progress_ids','archived','archived_at','archived_by_username','archived_by_display_name','archived_by_type','archive_reason','starred']);
+  if(entityName==='Customer')copy(['rep_username','data','completed_progress_ids','archived','archived_at','archived_by_username','archived_by_display_name','archived_by_type','archive_reason','starred','admin_sort_score']);
   if(entityName==='ActivityLog')copy(['actor_username','actor_display_name','actor_type','action_type','customer_id','customer_name','target_key','target_label','old_value','new_value','message','event_time','metadata']);
   return common;
 }
@@ -797,7 +797,7 @@ async function importFullBackup(file){
 
 async function fetchAllAdminCustomers(query){
   const all=[];let skip=0;
-  while(true){const batch=unwrap(await base44.entities.Customer.filter(query,'-created_date',500,skip));all.push(...batch);if(batch.length<500)break;skip+=500;if(skip>10000)break}
+  while(true){const batch=unwrap(await base44.entities.Customer.filter(query,'-admin_sort_score',500,skip));all.push(...batch);if(batch.length<500)break;skip+=500;if(skip>10000)break}
   return all;
 }
 function adminBaseQuery(){
@@ -830,7 +830,7 @@ async function fetchCustomerPage(){
     customers=globalCustomerRows.slice(start,start+CUSTOMER_PAGE_SIZE);customerHasNext=start+CUSTOMER_PAGE_SIZE<globalCustomerRows.length;
   }else{
     globalCustomerRows=null;const skip=(customerPage-1)*CUSTOMER_PAGE_SIZE;
-    const rows=unwrap(await base44.entities.Customer.filter(adminBaseQuery(),'-created_date',CUSTOMER_PAGE_SIZE+1,skip));
+    const rows=unwrap(await base44.entities.Customer.filter(adminBaseQuery(),'-admin_sort_score',CUSTOMER_PAGE_SIZE+1,skip));
     customerHasNext=rows.length>CUSTOMER_PAGE_SIZE;customers=rows.slice(0,CUSTOMER_PAGE_SIZE);
   }
   if(!customers.length&&customerPage>1){customerPage--;return fetchCustomerPage()}
@@ -931,7 +931,7 @@ customerEditForm.onsubmit=async e=>{
   e.preventDefault();const row=customers.find(x=>x.id===editingCustomerId);if(!row)return;
   const data={...(row.data||{})};customerEditForm.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
   try{const completed_progress_ids=[...document.querySelectorAll('#adminProgressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
-    await base44.entities.Customer.update(row.id,{rep_username:document.getElementById('editRep').value,data,completed_progress_ids});clearAdminDraft();adminEditorBaseline=adminCurrentEditorState();showMessage(customerEditNote,'客户资料已更新。','ok');await loadCustomers();setTimeout(()=>customerModal.hidden=true,350)}
+    await base44.entities.Customer.update(row.id,{rep_username:document.getElementById('editRep').value,data,completed_progress_ids,admin_sort_score:completed_progress_ids.length});clearAdminDraft();adminEditorBaseline=adminCurrentEditorState();showMessage(customerEditNote,'客户资料已更新。','ok');await loadCustomers();setTimeout(()=>customerModal.hidden=true,350)}
   catch(err){showMessage(customerEditNote,'保存失败：'+(err?.message||String(err)),'err')}
 };
 
