@@ -1,9 +1,9 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260926-29"></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>墨森维权客户登记系统 · 业务员</title><link rel="icon" type="image/svg+xml" href="./mosen-logo.svg?v=20260926-18"><link rel="stylesheet" href="./style.css?v=20260927-30"></head><body>
 <div class="topbar"><div class="brand-lockup"><img class="brand-logo" src="./mosen-logo.svg?v=20260926-18" alt="墨森"><div><div class="brand">墨森维权客户登记系统</div><div id="who" class="subbrand"></div></div></div><div class="row"><button id="newBtn" class="btn primary">＋ 登记客户</button><button id="logoutBtn" class="btn soft">退出</button></div></div>
 <div class="shell"><div class="stats"><div class="stat"><div id="myCount" class="n">0</div><div class="l">我的客户</div></div><div class="stat"><div id="fieldCount" class="n">0</div><div class="l">当前登记项目</div></div><div class="stat"><div id="todayCount" class="n">0</div><div class="l">今日新增</div></div></div>
 <div class="card"><div class="row"><div><h2 style="margin:0">我的客户</h2><div class="small">当前业务员：<b id="repLabel"></b></div></div><div class="spacer"></div><input id="search" class="search" placeholder="搜索客户信息…"></div><div id="customerList" style="margin-top:16px"></div></div></div>
 
-<div id="modal" class="modal" hidden><div class="modal-card"><div class="row"><h2 id="modalTitle" style="margin:0">登记客户</h2><div class="spacer"></div><button id="closeModal" class="btn soft">关闭</button></div>
+<div id="modal" class="modal" hidden><div class="modal-card customer-edit-modal-card"><div class="row customer-edit-modal-header"><h2 id="modalTitle" style="margin:0">登记客户</h2><div class="spacer"></div><button id="closeModal" class="btn soft">关闭</button></div>
 <form id="customerForm">
   <div id="dynamicFields" class="grid" style="margin-top:18px"></div>
   <div class="progress-editor progress-editor-prominent">
@@ -252,5 +252,5 @@ form.onsubmit=async e=>{
     const wasNew=!editingId;showMessage(note,'已保存并同步。','ok');await loadCustomers({resetPage:wasNew,refreshCounts:true});setTimeout(()=>modal.hidden=true,400)
   }catch(err){showMessage(note,'保存失败：'+(err?.message||'未知错误'),'err')}
 };
-document.getElementById('newBtn').onclick=()=>openForm();document.getElementById('closeModal').onclick=()=>modal.hidden=true;document.getElementById('cancelEdit').onclick=()=>modal.hidden=true;document.getElementById('search').oninput=renderCustomers;document.getElementById('logoutBtn').onclick=()=>{localStorage.removeItem('m717_rep_username');localStorage.removeItem('m717_rep_display_name');location.href='./login.html'};modal.onclick=e=>{if(e.target===modal)modal.hidden=true};boot();
+document.getElementById('newBtn').onclick=()=>openForm();document.getElementById('closeModal').onclick=()=>modal.hidden=true;document.getElementById('cancelEdit').onclick=()=>modal.hidden=true;document.getElementById('search').oninput=renderCustomers;document.getElementById('logoutBtn').onclick=()=>{localStorage.removeItem('m717_rep_username');localStorage.removeItem('m717_rep_display_name');location.href='./login.html'};boot();
 </script></body></html>
