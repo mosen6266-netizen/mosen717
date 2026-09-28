@@ -340,6 +340,7 @@ function saveSalesDraft(){
 function clearSalesDraft(){try{localStorage.removeItem(salesDraftKey())}catch(_){}}
 function editorDirty(){return !modal.hidden&&currentEditorState()!==editorBaseline}
 async function requestCloseEditor(){
+  if(salesFormSaving){await uiAlert('客户资料正在保存，请等待保存完成后再关闭。',{title:'正在保存'});return false}
   if(editorDirty()&&!await uiConfirm('当前修改尚未保存。已输入内容仍会保存在本机草稿中。',{title:'未保存的修改',confirmText:'仍然关闭',danger:true}))return false;
   modal.hidden=true;return true;
 }
@@ -354,6 +355,7 @@ form.onsubmit=async e=>{
   const data={};form.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
   const completed_progress_ids=[...document.querySelectorAll('#progressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
   const startingEditingId=editingId;
+  const draftKeyBeforeSave=salesDraftKey();
   try{
     if(startingEditingId){
       const oldRow=customers.find(x=>String(x.id)===String(startingEditingId));
@@ -370,6 +372,7 @@ form.onsubmit=async e=>{
       });
     }
     const wasNew=!startingEditingId;
+    try{localStorage.removeItem(draftKeyBeforeSave)}catch(_){}
     clearSalesDraft();editorBaseline=currentEditorState();showMessage(note,'已保存并同步。','ok');
     await loadCustomers({resetPage:wasNew,refreshCounts:true});
     setTimeout(()=>{
