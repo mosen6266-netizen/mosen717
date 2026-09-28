@@ -208,6 +208,7 @@ let reps=[],fields=[],customers=[],progressStages=[],editingCustomerId=null,drag
 let currentView='all',currentRepFilter='';
 const CUSTOMER_PAGE_SIZE=50;
 let customerPage=1,customerHasNext=false,totalCustomerCount=0,totalArchivedCount=0,customerCountByRep={},archivedCountByRep={},customerCountTimer=null,globalCustomerRows=null,searchTimer=null,adminEditorBaseline='',adminDraftTimer=null;
+let adminCustomerFormSaving=false;
 
 const loginView=document.getElementById('loginView'),appView=document.getElementById('appView'),loginNote=document.getElementById('loginNote');
 const customerModal=document.getElementById('customerModal'),customerEditForm=document.getElementById('customerEditForm'),customerEditNote=document.getElementById('customerEditNote');
@@ -535,10 +536,14 @@ function attachAdminPreviewEditor(portal,row){
   portal.querySelectorAll('[data-preview-progress-id]').forEach(cb=>cb.onchange=()=>{cb.closest('.progress-check').classList.toggle('checked',cb.checked);updatePreviewProgressUI(portal)});
   portal.querySelector('.preview-save-btn')?.addEventListener('click',async()=>{
     const note=portal.querySelector('[data-preview-note]'),btn=portal.querySelector('.preview-save-btn');
+    if(!btn||btn.dataset.saving==='1')return;
+    btn.dataset.saving='1';
+    const originalText=btn.textContent;
+    btn.disabled=true;btn.textContent='保存中…';btn.setAttribute('aria-busy','true');
     const data={...(row.data||{})};portal.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
     const completed_progress_ids=[...portal.querySelectorAll('[data-preview-progress-id]:checked')].map(x=>x.dataset.previewProgressId);
     const rep_username=portal.querySelector('[data-preview-rep]')?.value||'';
-    btn.disabled=true;showMessage(note,'正在保存…');
+    showMessage(note,'正在保存…');
     try{
       await base44.entities.Customer.update(row.id,{rep_username,data,completed_progress_ids,admin_sort_score:completed_progress_ids.length});
       row.rep_username=rep_username;row.data=data;row.completed_progress_ids=completed_progress_ids;
@@ -547,7 +552,10 @@ function attachAdminPreviewEditor(portal,row){
       const fresh=customers.find(x=>String(x.id)===String(row.id))||row;
       portal.innerHTML=previewCard(fresh);initDateTimeControls(portal);portal.hidden=false;portal.dataset.pinned='1';attachAdminPreviewEditor(portal,fresh);
       const newNote=portal.querySelector('[data-preview-note]');showMessage(newNote,'已保存并同步。','ok');
-    }catch(err){showMessage(note,'保存失败：'+(err?.message||String(err)),'err');btn.disabled=false}
+    }catch(err){
+      btn.dataset.saving='0';btn.disabled=false;btn.textContent=originalText;btn.removeAttribute('aria-busy');
+      showMessage(note,'保存失败：'+(err?.message||String(err)),'err');
+    }
   });
 }
 function bindPreviewHover(container){
@@ -928,11 +936,24 @@ function openCustomerEditor(row){
   try{const raw=localStorage.getItem(adminDraftKey());if(raw){const d=JSON.parse(raw);if(d?.data){document.getElementById('customerEditFields').innerHTML=buildGroupedFieldControls(active,d.data);initDateTimeControls(document.getElementById('customerEditFields'));document.getElementById('editRep').value=d.rep_username||row.rep_username||'';renderAdminProgressChecklist(d.completed_progress_ids||[]);showMessage(customerEditNote,'已恢复上次未保存的草稿。','ok')}}}catch(_){}
 }
 customerEditForm.onsubmit=async e=>{
-  e.preventDefault();const row=customers.find(x=>x.id===editingCustomerId);if(!row)return;
+  e.preventDefault();
+  if(adminCustomerFormSaving)return;
+  const row=customers.find(x=>x.id===editingCustomerId);if(!row)return;
+  const submitBtn=e.submitter||customerEditForm.querySelector('button[type="submit"]');
+  const oldText=submitBtn?.textContent||'保存修改';
+  adminCustomerFormSaving=true;
+  if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='保存中…';submitBtn.setAttribute('aria-busy','true')}
   const data={...(row.data||{})};customerEditForm.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
-  try{const completed_progress_ids=[...document.querySelectorAll('#adminProgressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
-    await base44.entities.Customer.update(row.id,{rep_username:document.getElementById('editRep').value,data,completed_progress_ids,admin_sort_score:completed_progress_ids.length});clearAdminDraft();adminEditorBaseline=adminCurrentEditorState();showMessage(customerEditNote,'客户资料已更新。','ok');await loadCustomers();setTimeout(()=>customerModal.hidden=true,350)}
-  catch(err){showMessage(customerEditNote,'保存失败：'+(err?.message||String(err)),'err')}
+  try{
+    const completed_progress_ids=[...document.querySelectorAll('#adminProgressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
+    await base44.entities.Customer.update(row.id,{rep_username:document.getElementById('editRep').value,data,completed_progress_ids,admin_sort_score:completed_progress_ids.length});
+    clearAdminDraft();adminEditorBaseline=adminCurrentEditorState();showMessage(customerEditNote,'客户资料已更新。','ok');await loadCustomers();
+    setTimeout(()=>{customerModal.hidden=true;adminCustomerFormSaving=false;if(submitBtn){submitBtn.disabled=false;submitBtn.textContent=oldText;submitBtn.removeAttribute('aria-busy')}},350);
+  }catch(err){
+    adminCustomerFormSaving=false;
+    if(submitBtn){submitBtn.disabled=false;submitBtn.textContent=oldText;submitBtn.removeAttribute('aria-busy')}
+    showMessage(customerEditNote,'保存失败：'+(err?.message||String(err)),'err');
+  }
 };
 
 document.getElementById('exportBtn').onclick=async()=>{
