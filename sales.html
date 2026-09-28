@@ -39,6 +39,7 @@ let username=localStorage.getItem('m717_rep_username')||'',displayName=localStor
 const CUSTOMER_PAGE_SIZE=50;
 let customerPage=1,customerHasNext=false,myCustomerTotal=0,myArchivedTotal=0,myTodayTotal=0,customerCountTimer=null;
 let customerMode='active',globalCustomerRows=null,searchTimer=null,editorBaseline='',draftTimer=null;
+let salesFormSaving=false;
 const modal=document.getElementById('modal'),form=document.getElementById('customerForm'),note=document.getElementById('formNote'),list=document.getElementById('customerList');
 function unwrap(v){return Array.isArray(v)?v:(v?.items||[])}
 async function boot(){
@@ -141,6 +142,7 @@ function renderProgressChecklist(completed=[]){
 }
 function localNowMinute(){const d=new Date(),y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0'),h=String(d.getHours()).padStart(2,'0'),min=String(d.getMinutes()).padStart(2,'0');return y+'-'+m+'-'+day+'T'+h+':'+min}
 function openForm(row=null){
+  if(salesFormSaving)return;
   editingId=row?.id||null;
   document.getElementById('modalTitle').textContent=editingId?'编辑客户':'登记客户';
   const originalData=row?.data?{...row.data}:{f_transfer_main_time:localNowMinute()};
@@ -198,9 +200,13 @@ function attachSalesPreviewEditor(portal,row){
   portal.querySelectorAll('[data-preview-progress-id]').forEach(cb=>cb.onchange=()=>{cb.closest('.progress-check').classList.toggle('checked',cb.checked);updatePreviewProgressUI(portal)});
   portal.querySelector('.preview-save-btn')?.addEventListener('click',async()=>{
     const note=portal.querySelector('[data-preview-note]'),btn=portal.querySelector('.preview-save-btn');
+    if(!btn||btn.dataset.saving==='1')return;
+    btn.dataset.saving='1';
+    const originalText=btn.textContent;
+    btn.disabled=true;btn.textContent='保存中…';btn.setAttribute('aria-busy','true');
     const data={...(row.data||{})};portal.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
     const completed_progress_ids=[...portal.querySelectorAll('[data-preview-progress-id]:checked')].map(x=>x.dataset.previewProgressId);
-    btn.disabled=true;showMessage(note,'正在保存…');
+    showMessage(note,'正在保存…');
     try{
       await base44.entities.Customer.update(row.id,{rep_username:username,data,completed_progress_ids,admin_sort_score:completed_progress_ids.length});
       await logCustomerDiff(row,data,completed_progress_ids,row.id);
@@ -210,7 +216,10 @@ function attachSalesPreviewEditor(portal,row){
       const fresh=customers.find(x=>String(x.id)===String(row.id))||row;
       portal.innerHTML=previewCard(fresh);initDateTimeControls(portal);portal.hidden=false;portal.dataset.pinned='1';attachSalesPreviewEditor(portal,fresh);
       const newNote=portal.querySelector('[data-preview-note]');showMessage(newNote,'已保存并同步。','ok');
-    }catch(err){showMessage(note,'保存失败：'+(err?.message||String(err)),'err');btn.disabled=false}
+    }catch(err){
+      btn.dataset.saving='0';btn.disabled=false;btn.textContent=originalText;btn.removeAttribute('aria-busy');
+      showMessage(note,'保存失败：'+(err?.message||String(err)),'err');
+    }
   });
 }
 function bindPreviewHover(container){
@@ -336,24 +345,42 @@ async function requestCloseEditor(){
 }
 form.addEventListener('input',saveSalesDraft);form.addEventListener('change',saveSalesDraft);
 form.onsubmit=async e=>{
-  e.preventDefault();const data={};form.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
+  e.preventDefault();
+  if(salesFormSaving)return;
+  const submitBtn=e.submitter||form.querySelector('button[type="submit"]');
+  const oldText=submitBtn?.textContent||'保存客户';
+  salesFormSaving=true;
+  if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='保存中…';submitBtn.setAttribute('aria-busy','true')}
+  const data={};form.querySelectorAll('[data-key]').forEach(el=>data[el.dataset.key]=el.value);
   const completed_progress_ids=[...document.querySelectorAll('#progressChecklist input[type="checkbox"]:checked')].map(x=>x.dataset.progressId);
+  const startingEditingId=editingId;
   try{
-    if(editingId){
-      const oldRow=customers.find(x=>String(x.id)===String(editingId));
-      await base44.entities.Customer.update(editingId,{rep_username:username,data,completed_progress_ids,admin_sort_score:completed_progress_ids.length});
-      if(oldRow)await logCustomerDiff(oldRow,data,completed_progress_ids,editingId);
+    if(startingEditingId){
+      const oldRow=customers.find(x=>String(x.id)===String(startingEditingId));
+      await base44.entities.Customer.update(startingEditingId,{rep_username:username,data,completed_progress_ids,admin_sort_score:completed_progress_ids.length});
+      if(oldRow)await logCustomerDiff(oldRow,data,completed_progress_ids,startingEditingId);
     }else{
       const created=await base44.entities.Customer.create({rep_username:username,data,completed_progress_ids,archived:false,starred:false,admin_sort_score:completed_progress_ids.length});
       const cid=created?.id||'';
+      if(cid)editingId=cid;
       await writeSalesLog({
         action_type:'customer_create',customer_id:cid,customer_name:customerNameFromData(data),
         message:(displayName||username)+' 登记了新客户「'+customerNameFromData(data)+'」',
         metadata:{fields:data,completed_progress_ids}
       });
     }
-    const wasNew=!editingId;clearSalesDraft();editorBaseline=currentEditorState();showMessage(note,'已保存并同步。','ok');await loadCustomers({resetPage:wasNew,refreshCounts:true});setTimeout(()=>modal.hidden=true,400)
-  }catch(err){showMessage(note,'保存失败：'+(err?.message||'未知错误'),'err')}
+    const wasNew=!startingEditingId;
+    clearSalesDraft();editorBaseline=currentEditorState();showMessage(note,'已保存并同步。','ok');
+    await loadCustomers({resetPage:wasNew,refreshCounts:true});
+    setTimeout(()=>{
+      modal.hidden=true;salesFormSaving=false;
+      if(submitBtn){submitBtn.disabled=false;submitBtn.textContent=oldText;submitBtn.removeAttribute('aria-busy')}
+    },400);
+  }catch(err){
+    salesFormSaving=false;
+    if(submitBtn){submitBtn.disabled=false;submitBtn.textContent=oldText;submitBtn.removeAttribute('aria-busy')}
+    showMessage(note,'保存失败：'+(err?.message||'未知错误'),'err');
+  }
 };
 document.getElementById('newBtn').onclick=()=>openForm();
 document.getElementById('closeModal').onclick=requestCloseEditor;document.getElementById('cancelEdit').onclick=requestCloseEditor;
