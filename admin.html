@@ -739,14 +739,83 @@ function createdId(result){
   return result?.id||result?.data?.id||result?.entity?.id||
     result?.[0]?.id||result?.items?.[0]?.id||result?.data?.[0]?.id||'';
 }
-function validateBackupStructure(raw){
-  if(raw?.format!==BUSINESS_BACKUP_FORMAT||Number(raw?.version)!==BUSINESS_BACKUP_VERSION||!raw?.entities){
-    throw new Error('这不是有效的 mosen717 业务数据备份文件');
+function normalizeImportedEntities(raw){
+  const format=String(raw?.format||'');
+  const e=raw?.entities||{};
+
+  if(format===BUSINESS_BACKUP_FORMAT){
+    return {
+      SalesRep:Array.isArray(e.SalesRep)?e.SalesRep:[],
+      FormField:Array.isArray(e.FormField)?e.FormField:[],
+      ProgressStage:Array.isArray(e.ProgressStage)?e.ProgressStage:[],
+      Customer:Array.isArray(e.Customer)?e.Customer:[],
+      ActivityLog:Array.isArray(e.ActivityLog)?e.ActivityLog:[],
+      VIPWorkflowDefinition:Array.isArray(e.VIPWorkflowDefinition)?e.VIPWorkflowDefinition:[],
+      VIPWorkflowProgress:Array.isArray(e.VIPWorkflowProgress)?e.VIPWorkflowProgress:[]
+    };
   }
-  const e=raw.entities;
-  for(const name of BUSINESS_BACKUP_ENTITY_NAMES){
+
+  if(format==='MOSEN717_FULL_BACKUP'){
+    return {
+      SalesRep:Array.isArray(e.SalesRep)?e.SalesRep:[],
+      FormField:Array.isArray(e.FormField)?e.FormField:[],
+      ProgressStage:Array.isArray(e.ProgressStage)?e.ProgressStage:[],
+      Customer:Array.isArray(e.Customer)?e.Customer:[],
+      ActivityLog:Array.isArray(e.ActivityLog)?e.ActivityLog:[],
+      VIPWorkflowDefinition:Array.isArray(e.VIPWorkflowDefinition)?e.VIPWorkflowDefinition:[],
+      VIPWorkflowProgress:Array.isArray(e.VIPWorkflowProgress)?e.VIPWorkflowProgress:[]
+    };
+  }
+
+  if(format==='MOSEN_VIP_BUSINESS_DATA_BACKUP'){
+    const cleanCustomer=row=>{
+      const x={...row};
+      delete x.customer_name_normalized;
+      delete x.phone_normalized;
+      delete x.email_normalized;
+      delete x.wallet_normalized;
+      delete x.country_normalized;
+      delete x.search_text;
+      delete x.legacy_source_id;
+      return x;
+    };
+    const cleanLog=row=>{
+      const x={...row};
+      delete x.event_day;
+      delete x.migration_duplicate;
+      delete x.legacy_source_id;
+      return x;
+    };
+    return {
+      SalesRep:(e.VIPSalesRep||[]).map(row=>{
+        const x={...row};delete x.legacy_source_id;return x;
+      }),
+      FormField:(e.VIPFormField||[]).map(row=>{
+        const x={...row};delete x.legacy_source_id;return x;
+      }),
+      ProgressStage:(e.VIPProgressStage||[]).map(row=>{
+        const x={...row};delete x.legacy_source_id;return x;
+      }),
+      Customer:(e.VIPCustomer||[]).map(cleanCustomer),
+      ActivityLog:(e.VIPActivityLog||[]).map(cleanLog),
+      VIPWorkflowDefinition:Array.isArray(e.VIPWorkflowDefinition)?e.VIPWorkflowDefinition:[],
+      VIPWorkflowProgress:Array.isArray(e.VIPWorkflowProgress)?e.VIPWorkflowProgress:[]
+    };
+  }
+
+  throw new Error(
+    '无法识别备份类型。检测到 format：'+(format||'未提供')+
+    '。支持：MOSEN717_BUSINESS_DATA_BACKUP、MOSEN717_FULL_BACKUP、MOSEN_VIP_BUSINESS_DATA_BACKUP'
+  );
+}
+
+function validateBackupStructure(raw){
+  const e=normalizeImportedEntities(raw);
+
+  for(const name of ['SalesRep','FormField','ProgressStage','Customer','ActivityLog','VIPWorkflowDefinition','VIPWorkflowProgress']){
     if(!Array.isArray(e[name]))throw new Error('备份文件缺少 '+name+' 数据表');
   }
+
   const allowedTypes=new Set(['text','number','date','datetime','email','tel','textarea','select']);
   const fieldKeys=new Set();
   for(const field of e.FormField){
@@ -755,9 +824,11 @@ function validateBackupStructure(raw){
     fieldKeys.add(String(field.field_key));
     if(!allowedTypes.has(String(field.field_type||'')))throw new Error('不支持的字段类型：'+String(field.field_type));
   }
+
   for(const p of e.ProgressStage){
     if(!p.__old_id)throw new Error('客户进度缺少原始 ID，无法安全恢复客户勾选进度');
   }
+
   const repNames=new Set((e.SalesRep||[]).map(x=>String(x.username||'')));
   for(const cust of e.Customer){
     if(cust.data!=null&&(typeof cust.data!=='object'||Array.isArray(cust.data)))throw new Error('客户资料格式不正确');
@@ -766,14 +837,34 @@ function validateBackupStructure(raw){
   }
   return e;
 }
+
 async function validateBackupChecksum(raw){
-  if(!raw.checksum_sha256)throw new Error('备份缺少完整性校验码');
+  if(!raw?.entities)throw new Error('备份文件缺少 entities 数据');
+  if(!raw.checksum_sha256){
+    if(raw.format==='MOSEN717_FULL_BACKUP'&&Number(raw.version||1)<2)return;
+    throw new Error('备份缺少完整性校验码');
+  }
   const actual=await sha256(JSON.stringify(raw.entities));
   if(actual!==raw.checksum_sha256)throw new Error('备份完整性校验失败：文件可能已损坏或被修改');
-  const expected=raw.counts||{};
-  const actualCounts=backupCounts(raw.entities);
-  for(const [k,v] of Object.entries(expected)){
-    if(Number(v)!==Number(actualCounts[k]))throw new Error('备份数量校验失败：'+k);
+
+  if(raw.counts&&typeof raw.counts==='object'){
+    const normalized=normalizeImportedEntities(raw);
+    const actualCounts=backupCounts(normalized);
+    const keyMap={
+      sales_reps:'sales_reps',
+      form_fields:'form_fields',
+      progress_stages:'progress_stages',
+      customers:'customers',
+      activity_logs:'activity_logs',
+      workflow_definitions:'workflow_definitions',
+      workflow_progress:'workflow_progress'
+    };
+    for(const [sourceKey,targetKey] of Object.entries(keyMap)){
+      if(raw.counts[sourceKey]===undefined)continue;
+      if(Number(raw.counts[sourceKey])!==Number(actualCounts[targetKey])){
+        throw new Error('备份数量校验失败：'+sourceKey+'（文件 '+raw.counts[sourceKey]+'，实际 '+actualCounts[targetKey]+'）');
+      }
+    }
   }
 }
 async function restoreEntities(entities){
@@ -845,9 +936,10 @@ async function importFullBackup(file){
   try{
     showMessage(note,'正在检查业务数据备份完整性…','warn');
     const raw=JSON.parse(await file.text());
-    const entities=validateBackupStructure(raw);
     await validateBackupChecksum(raw);
+    const entities=validateBackupStructure(raw);
     const c=backupCounts(entities);
+    showMessage(note,'备份识别成功：'+String(file?.name||'未命名文件')+' · '+String(raw.format||'未知格式'),'warn');
 
     const ok=await uiConfirm(
       '业务数据备份校验通过。\n\n'+
